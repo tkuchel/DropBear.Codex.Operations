@@ -14,10 +14,10 @@ namespace DropBear.Codex.Operations;
 /// </summary>
 public class OperationManager
 {
-    private readonly List<Exception> _exceptions = [];
+    private readonly List<Exception> _exceptions = new();
     private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = [];
-    private readonly List<Func<Task<object>>> _rollbackOperations = [];
+    private readonly List<Func<Task<object>>> _operations = new();
+    private readonly List<Func<Task<object>>> _rollbackOperations = new();
 
     /// <summary>
     ///     Gets the list of operations.
