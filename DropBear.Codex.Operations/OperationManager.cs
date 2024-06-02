@@ -14,10 +14,10 @@ namespace DropBear.Codex.Operations;
 /// </summary>
 public class OperationManager
 {
-    private readonly List<Exception> _exceptions = new();
+    private readonly List<Exception> _exceptions = [];
     private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = new();
-    private readonly List<Func<Task<object>>> _rollbackOperations = new();
+    private readonly List<Func<Task<object>>> _operations = [];
+    private readonly List<Func<Task<object>>> _rollbackOperations = [];
 
     /// <summary>
     ///     Gets the list of operations.
@@ -123,14 +123,13 @@ public class OperationManager
                 var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
                 _exceptions.Add(exception);
                 OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                break;
             }
-            else
-            {
-                OperationCompleted?.Invoke(this, EventArgs.Empty);
-            }
+
+            OperationCompleted?.Invoke(this, EventArgs.Empty);
         }
 
-        if (_exceptions.Count != 0)
+        if (_exceptions.Count is not 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
@@ -183,7 +182,7 @@ public class OperationManager
             }
         }
 
-        if (_exceptions.Count != 0)
+        if (_exceptions.Count is not 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
@@ -212,7 +211,7 @@ public class OperationManager
                 rollbackExceptions.Add(new InvalidOperationException(res.ErrorMessage, res.Exception));
         }
 
-        return rollbackExceptions.Count == 0
+        return rollbackExceptions.Count is 0
             ? Result.Success()
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
