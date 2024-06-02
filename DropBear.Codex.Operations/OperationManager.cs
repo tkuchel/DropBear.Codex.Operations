@@ -123,7 +123,7 @@ public class OperationManager
                 var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
                 _exceptions.Add(exception);
                 OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
-                break;
+                break; // Exit the loop on the first failure
             }
 
             OperationCompleted?.Invoke(this, EventArgs.Empty);
@@ -133,7 +133,7 @@ public class OperationManager
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
-            return Result.Failure(new Collection<Exception>(_exceptions));
+            return rollbackResult.IsSuccess ? Result.Failure(new Collection<Exception>(_exceptions)) : rollbackResult;
         }
 
         scope.Complete();
@@ -167,14 +167,14 @@ public class OperationManager
                     var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
                     _exceptions.Add(exception);
                     OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
-                    break;
+                    break; // Exit the loop on the first failure
                 }
                 case Result<T> { IsSuccess: false } typedRes:
                 {
                     var exception = new InvalidOperationException(typedRes.ErrorMessage, typedRes.Exception);
                     _exceptions.Add(exception);
                     OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
-                    break;
+                    break; // Exit the loop on the first failure
                 }
                 default:
                     OperationCompleted?.Invoke(this, EventArgs.Empty);
@@ -186,7 +186,9 @@ public class OperationManager
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
-            return Result<T>.Failure(new Collection<Exception>(_exceptions));
+            return rollbackResult.IsSuccess
+                ? Result<T>.Failure(new Collection<Exception>(_exceptions))
+                : Result<T>.Failure(rollbackResult.ErrorMessage);
         }
 
         scope.Complete();
@@ -209,7 +211,7 @@ public class OperationManager
                 rollbackExceptions.Add(new InvalidOperationException(res.ErrorMessage, res.Exception));
         }
 
-        return rollbackExceptions.Count is 0
+        return rollbackExceptions.Count == 0
             ? Result.Success()
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
