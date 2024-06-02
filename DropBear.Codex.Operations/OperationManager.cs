@@ -14,10 +14,10 @@ namespace DropBear.Codex.Operations;
 /// </summary>
 public class OperationManager
 {
-    private readonly List<Exception> _exceptions = [];
+    private readonly List<Exception> _exceptions = new();
     private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = [];
-    private readonly List<Func<Task<object>>> _rollbackOperations = [];
+    private readonly List<Func<Task<object>>> _operations = new();
+    private readonly List<Func<Task<object>>> _rollbackOperations = new();
 
     /// <summary>
     ///     Gets the list of operations.
@@ -133,7 +133,7 @@ public class OperationManager
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
-            return rollbackResult.IsSuccess ? Result.Failure(new Collection<Exception>(_exceptions)) : rollbackResult;
+            return Result.Failure(new Collection<Exception>(_exceptions));
         }
 
         scope.Complete();
@@ -186,9 +186,7 @@ public class OperationManager
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
-            return rollbackResult.IsSuccess
-                ? Result<T>.Failure(new Collection<Exception>(_exceptions))
-                : Result<T>.Failure(rollbackResult.ErrorMessage);
+            return Result<T>.Failure(new Collection<Exception>(_exceptions));
         }
 
         scope.Complete();
