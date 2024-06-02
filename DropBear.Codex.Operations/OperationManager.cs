@@ -1,4 +1,7 @@
-﻿using System.Collections.ObjectModel;
+﻿// File: OperationManager.cs
+// Description: Manages transactions, ensuring all operations are executed successfully or rolled back in case of failure, with added enhancements.
+
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Transactions;
 using DropBear.Codex.Core;
@@ -127,7 +130,7 @@ public class OperationManager
             }
         }
 
-        if (_exceptions.Count is not 0)
+        if (_exceptions.Count != 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
@@ -180,7 +183,7 @@ public class OperationManager
             }
         }
 
-        if (_exceptions.Count is not 0)
+        if (_exceptions.Count != 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
@@ -198,7 +201,7 @@ public class OperationManager
     /// </summary>
     /// <param name="rollbackOperations">The rollback operations to execute.</param>
     /// <returns>A Result indicating the success or failure of the rollback operations.</returns>
-    private static async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
+    private async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
     {
         var rollbackExceptions = new List<Exception>();
 
@@ -209,7 +212,7 @@ public class OperationManager
                 rollbackExceptions.Add(new InvalidOperationException(res.ErrorMessage, res.Exception));
         }
 
-        return rollbackExceptions.Count is 0
+        return rollbackExceptions.Count == 0
             ? Result.Success()
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
@@ -222,7 +225,7 @@ public class OperationManager
     /// <param name="retryCount">The number of times to retry the operation in case of failure.</param>
     /// <param name="timeout">The timeout duration for the operation.</param>
     /// <returns>A Result indicating the success or failure of the operation.</returns>
-    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, int retryCount = 3,
+    private async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, int retryCount = 3,
         TimeSpan? timeout = null)
     {
         for (var attempt = 0; attempt < retryCount; attempt++)
@@ -262,7 +265,7 @@ public class OperationManager
     /// <param name="retryCount">The number of times to retry the operation in case of failure.</param>
     /// <param name="timeout">The timeout duration for the operation.</param>
     /// <returns>A Result indicating the success or failure of the operation.</returns>
-    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<Result<T>>> operation, int retryCount = 3,
+    private async Task<object> ExecuteOperationAsync<T>(Func<Task<Result<T>>> operation, int retryCount = 3,
         TimeSpan? timeout = null)
     {
         for (var attempt = 0; attempt < retryCount; attempt++)
@@ -298,7 +301,7 @@ public class OperationManager
     /// <param name="retryCount">The number of times to retry the operation in case of failure.</param>
     /// <param name="timeout">The timeout duration for the operation.</param>
     /// <returns>A Result indicating the success or failure of the operation.</returns>
-    private static async Task<object> ExecuteOperationAsync(Func<Task<Result>> operation, int retryCount = 3,
+    private async Task<object> ExecuteOperationAsync(Func<Task<Result>> operation, int retryCount = 3,
         TimeSpan? timeout = null)
     {
         for (var attempt = 0; attempt < retryCount; attempt++)
