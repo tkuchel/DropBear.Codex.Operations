@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Transactions;
 using DropBear.Codex.Core;
 
@@ -16,6 +17,56 @@ public class OperationManager
     private readonly List<Func<Task<object>>> _rollbackOperations = [];
 
     /// <summary>
+    ///     Gets the list of operations.
+    /// </summary>
+    public IReadOnlyList<Func<Task<object>>> Operations
+    {
+        [DebuggerStepThrough]
+        get
+        {
+            lock (_lock)
+            {
+                return _operations.AsReadOnly();
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Gets the list of rollback operations.
+    /// </summary>
+    public IReadOnlyList<Func<Task<object>>> RollbackOperations
+    {
+        [DebuggerStepThrough]
+        get
+        {
+            lock (_lock)
+            {
+                return _rollbackOperations.AsReadOnly();
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Occurs when an operation starts.
+    /// </summary>
+    public event EventHandler<EventArgs>? OperationStarted;
+
+    /// <summary>
+    ///     Occurs when an operation completes successfully.
+    /// </summary>
+    public event EventHandler<EventArgs>? OperationCompleted;
+
+    /// <summary>
+    ///     Occurs when an operation fails.
+    /// </summary>
+    public event EventHandler<OperationFailedEventArgs>? OperationFailed;
+
+    /// <summary>
+    ///     Occurs when rollback operations start.
+    /// </summary>
+    public event EventHandler<EventArgs>? RollbackStarted;
+
+    /// <summary>
     ///     Adds an operation and its corresponding rollback operation to the transaction.
     /// </summary>
     /// <typeparam name="T">The type of the result.</typeparam>
@@ -25,8 +76,8 @@ public class OperationManager
     {
         lock (_lock)
         {
-            _operations.Add(async () => await ExecuteOperationAsync(operation).ConfigureAwait(false));
-            _rollbackOperations.Add(async () => await ExecuteOperationAsync(rollbackOperation).ConfigureAwait(false));
+            _operations.Add(() => ExecuteOperationAsync(operation));
+            _rollbackOperations.Add(() => ExecuteOperationAsync(rollbackOperation));
         }
     }
 
@@ -40,8 +91,8 @@ public class OperationManager
     {
         lock (_lock)
         {
-            _operations.Add(async () => await ExecuteOperationAsync(operation).ConfigureAwait(false));
-            _rollbackOperations.Add(async () => await ExecuteOperationAsync(rollbackOperation).ConfigureAwait(false));
+            _operations.Add(() => ExecuteOperationAsync(operation));
+            _rollbackOperations.Add(() => ExecuteOperationAsync(rollbackOperation));
         }
     }
 
@@ -60,15 +111,25 @@ public class OperationManager
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-
         foreach (var operation in operationsCopy)
         {
+            OperationStarted?.Invoke(this, EventArgs.Empty);
             var result = await ExecuteOperationAsync(operation).ConfigureAwait(false);
-            if (result is Result res && !res.IsSuccess) _exceptions.Add(new Exception(res.ErrorMessage, res.Exception));
+            if (result is Result { IsSuccess: false } res)
+            {
+                var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
+                _exceptions.Add(exception);
+                OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+            }
+            else
+            {
+                OperationCompleted?.Invoke(this, EventArgs.Empty);
+            }
         }
 
-        if (_exceptions.Count > 0)
+        if (_exceptions.Count is not 0)
         {
+            RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
             return rollbackResult.IsSuccess ? Result.Failure(new Collection<Exception>(_exceptions)) : rollbackResult;
         }
@@ -93,18 +154,35 @@ public class OperationManager
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-
         foreach (var operation in operationsCopy)
         {
+            OperationStarted?.Invoke(this, EventArgs.Empty);
             var result = await ExecuteOperationAsync(operation).ConfigureAwait(false);
-            if (result is Result res && !res.IsSuccess)
-                _exceptions.Add(new Exception(res.ErrorMessage, res.Exception));
-            else if (result is Result<T> typedRes && !typedRes.IsSuccess)
-                _exceptions.Add(new Exception(typedRes.ErrorMessage, typedRes.Exception));
+            switch (result)
+            {
+                case Result { IsSuccess: false } res:
+                {
+                    var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
+                    _exceptions.Add(exception);
+                    OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                    break;
+                }
+                case Result<T> { IsSuccess: false } typedRes:
+                {
+                    var exception = new InvalidOperationException(typedRes.ErrorMessage, typedRes.Exception);
+                    _exceptions.Add(exception);
+                    OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                    break;
+                }
+                default:
+                    OperationCompleted?.Invoke(this, EventArgs.Empty);
+                    break;
+            }
         }
 
-        if (_exceptions.Count > 0)
+        if (_exceptions.Count is not 0)
         {
+            RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
             return rollbackResult.IsSuccess
                 ? Result<T>.Failure(new Collection<Exception>(_exceptions))
@@ -112,7 +190,7 @@ public class OperationManager
         }
 
         scope.Complete();
-        return Result<T>.Success(default);
+        return Result<T>.Success(default!);
     }
 
     /// <summary>
@@ -120,79 +198,132 @@ public class OperationManager
     /// </summary>
     /// <param name="rollbackOperations">The rollback operations to execute.</param>
     /// <returns>A Result indicating the success or failure of the rollback operations.</returns>
-    private async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
+    private static async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
     {
         var rollbackExceptions = new List<Exception>();
 
         foreach (var rollbackOperation in rollbackOperations)
         {
             var result = await ExecuteOperationAsync(rollbackOperation).ConfigureAwait(false);
-            if (result is Result res && !res.IsSuccess)
-                rollbackExceptions.Add(new Exception(res.ErrorMessage, res.Exception));
+            if (result is Result { IsSuccess: false } res)
+                rollbackExceptions.Add(new InvalidOperationException(res.ErrorMessage, res.Exception));
         }
 
-        return rollbackExceptions.Count == 0
+        return rollbackExceptions.Count is 0
             ? Result.Success()
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
 
     /// <summary>
-    ///     Executes an individual operation and handles any exceptions.
+    ///     Executes an individual operation with retry logic and handles any exceptions.
     /// </summary>
     /// <typeparam name="T">The type of the result.</typeparam>
     /// <param name="operation">The operation to execute.</param>
+    /// <param name="retryCount">The number of times to retry the operation in case of failure.</param>
+    /// <param name="timeout">The timeout duration for the operation.</param>
     /// <returns>A Result indicating the success or failure of the operation.</returns>
-    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation)
+    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, int retryCount = 3,
+        TimeSpan? timeout = null)
     {
-        try
-        {
-            var result = await operation().ConfigureAwait(false);
-            return Result<T>.Success(result);
-        }
-        catch (Exception ex)
-        {
-            // Log exception or handle it as needed
-            Console.WriteLine($"Exception during operation execution: {ex.Message}");
-            return Result<T>.Failure(ex.Message, ex);
-        }
+        for (var attempt = 0; attempt < retryCount; attempt++)
+            try
+            {
+                if (timeout.HasValue)
+                {
+                    using var cts = new CancellationTokenSource(timeout.Value);
+                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token))
+                        .ConfigureAwait(false);
+                    if (task is not Task<T> resultTask) continue;
+                    var result = await resultTask.ConfigureAwait(false);
+                    return Result<T>.Success(result);
+                }
+                else
+                {
+                    var result = await operation().ConfigureAwait(false);
+                    return Result<T>.Success(result);
+                }
+            }
+            catch (Exception ex)
+            {
+                //Log.Error($"Exception during operation execution: {ex.Message}");
+                if (attempt == retryCount - 1) return Result<T>.Failure(ex.Message, ex);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)))
+                    .ConfigureAwait(false); // Exponential backoff
+            }
+
+        return Result<T>.Failure("Operation failed after all retry attempts");
     }
 
     /// <summary>
-    ///     Executes an individual operation and handles any exceptions.
+    ///     Executes an individual operation with retry logic and handles any exceptions.
     /// </summary>
     /// <typeparam name="T">The type of the result.</typeparam>
     /// <param name="operation">The operation to execute.</param>
+    /// <param name="retryCount">The number of times to retry the operation in case of failure.</param>
+    /// <param name="timeout">The timeout duration for the operation.</param>
     /// <returns>A Result indicating the success or failure of the operation.</returns>
-    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<Result<T>>> operation)
+    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<Result<T>>> operation, int retryCount = 3,
+        TimeSpan? timeout = null)
     {
-        try
-        {
-            return await operation().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // Log exception or handle it as needed
-            Console.WriteLine($"Exception during operation execution: {ex.Message}");
-            return Result<T>.Failure(ex.Message, ex);
-        }
+        for (var attempt = 0; attempt < retryCount; attempt++)
+            try
+            {
+                if (timeout.HasValue)
+                {
+                    using var cts = new CancellationTokenSource(timeout.Value);
+                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token))
+                        .ConfigureAwait(false);
+                    if (task is Task<Result<T>> resultTask) return await resultTask.ConfigureAwait(false);
+                }
+                else
+                {
+                    return await operation().ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                //Log.Error($"Exception during operation execution: {ex.Message}");
+                if (attempt == retryCount - 1) return Result<T>.Failure(ex.Message, ex);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)))
+                    .ConfigureAwait(false); // Exponential backoff
+            }
+
+        return Result<T>.Failure("Operation failed after all retry attempts");
     }
 
     /// <summary>
-    ///     Executes an individual operation and handles any exceptions.
+    ///     Executes an individual operation with retry logic and handles any exceptions.
     /// </summary>
     /// <param name="operation">The operation to execute.</param>
+    /// <param name="retryCount">The number of times to retry the operation in case of failure.</param>
+    /// <param name="timeout">The timeout duration for the operation.</param>
     /// <returns>A Result indicating the success or failure of the operation.</returns>
-    private static async Task<object> ExecuteOperationAsync(Func<Task<Result>> operation)
+    private static async Task<object> ExecuteOperationAsync(Func<Task<Result>> operation, int retryCount = 3,
+        TimeSpan? timeout = null)
     {
-        try
-        {
-            return await operation().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // Log exception or handle it as needed
-            Console.WriteLine($"Exception during operation execution: {ex.Message}");
-            return Result.Failure(ex.Message, ex);
-        }
+        for (var attempt = 0; attempt < retryCount; attempt++)
+            try
+            {
+                if (timeout.HasValue)
+                {
+                    using var cts = new CancellationTokenSource(timeout.Value);
+                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token))
+                        .ConfigureAwait(false);
+                    if (task is Task<Result> resultTask) return await resultTask.ConfigureAwait(false);
+                }
+                else
+                {
+                    return await operation().ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                //Log.Error($"Exception during operation execution: {ex.Message}");
+                if (attempt == retryCount - 1) return Result.Failure(ex.Message, ex);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)))
+                    .ConfigureAwait(false); // Exponential backoff
+            }
+
+        return Result.Failure("Operation failed after all retry attempts");
     }
 }
