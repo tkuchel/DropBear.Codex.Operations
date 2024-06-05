@@ -10,10 +10,10 @@ namespace DropBear.Codex.Operations;
 
 public class OperationManager
 {
-    private readonly List<Exception> _exceptions = new();
+    private readonly List<Exception> _exceptions = [];
     private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = new();
-    private readonly List<Func<Task<object>>> _rollbackOperations = new();
+    private readonly List<Func<Task<object>>> _operations = [];
+    private readonly List<Func<Task<object>>> _rollbackOperations = [];
 
     public IReadOnlyList<Func<Task<object>>> Operations
     {
@@ -88,7 +88,7 @@ public class OperationManager
             OperationCompleted?.Invoke(this, EventArgs.Empty);
         }
 
-        if (_exceptions.Count != 0)
+        if (_exceptions.Count is not 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
@@ -136,7 +136,7 @@ public class OperationManager
             }
         }
 
-        if (_exceptions.Count != 0)
+        if (_exceptions.Count is not 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
@@ -149,7 +149,7 @@ public class OperationManager
         return Result<T>.Success(default!);
     }
 
-    private async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
+    private static async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
     {
         var rollbackExceptions = new List<Exception>();
 
@@ -172,10 +172,10 @@ public class OperationManager
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
 
-    private async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, int retryCount = 3, TimeSpan? timeout = null)
+    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, int retryCount = 3,
+        TimeSpan? timeout = null)
     {
         for (var attempt = 0; attempt < retryCount; attempt++)
-        {
             try
             {
                 Task<T> resultTask;
@@ -183,7 +183,8 @@ public class OperationManager
                 if (timeout.HasValue)
                 {
                     using var cts = new CancellationTokenSource(timeout.Value);
-                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token)).ConfigureAwait(false);
+                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token))
+                        .ConfigureAwait(false);
                     if (task is not Task<T> rt) continue;
                     resultTask = rt;
                 }
@@ -193,23 +194,23 @@ public class OperationManager
                 }
 
                 var result = await resultTask.ConfigureAwait(false);
-                return result;
+                if (result is not null) return result;
             }
             catch (Exception ex)
             {
                 if (attempt == retryCount - 1)
                     return Result<T>.Failure(ex.Message, ex);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt))).ConfigureAwait(false); // Exponential backoff
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)))
+                    .ConfigureAwait(false); // Exponential backoff
             }
-        }
 
         return Result<T>.Failure("Operation failed after all retry attempts");
     }
 
-    private async Task<object> ExecuteOperationAsync<T>(Func<Task<Result<T>>> operation, int retryCount = 3, TimeSpan? timeout = null)
+    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<Result<T>>> operation, int retryCount = 3,
+        TimeSpan? timeout = null)
     {
         for (var attempt = 0; attempt < retryCount; attempt++)
-        {
             try
             {
                 Task<Result<T>> resultTask;
@@ -217,7 +218,8 @@ public class OperationManager
                 if (timeout.HasValue)
                 {
                     using var cts = new CancellationTokenSource(timeout.Value);
-                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token)).ConfigureAwait(false);
+                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token))
+                        .ConfigureAwait(false);
                     if (task is not Task<Result<T>> rt) continue;
                     resultTask = rt;
                 }
@@ -233,17 +235,17 @@ public class OperationManager
             {
                 if (attempt == retryCount - 1)
                     return Result<T>.Failure(ex.Message, ex);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt))).ConfigureAwait(false); // Exponential backoff
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)))
+                    .ConfigureAwait(false); // Exponential backoff
             }
-        }
 
         return Result<T>.Failure("Operation failed after all retry attempts");
     }
 
-    private async Task<object> ExecuteOperationAsync(Func<Task<Result>> operation, int retryCount = 3, TimeSpan? timeout = null)
+    private static async Task<object> ExecuteOperationAsync(Func<Task<Result>> operation, int retryCount = 3,
+        TimeSpan? timeout = null)
     {
         for (var attempt = 0; attempt < retryCount; attempt++)
-        {
             try
             {
                 Task<Result> resultTask;
@@ -251,7 +253,8 @@ public class OperationManager
                 if (timeout.HasValue)
                 {
                     using var cts = new CancellationTokenSource(timeout.Value);
-                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token)).ConfigureAwait(false);
+                    var task = await Task.WhenAny(operation(), Task.Delay(Timeout.Infinite, cts.Token))
+                        .ConfigureAwait(false);
                     if (task is not Task<Result> rt) continue;
                     resultTask = rt;
                 }
@@ -267,9 +270,9 @@ public class OperationManager
             {
                 if (attempt == retryCount - 1)
                     return Result.Failure(ex.Message, ex);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt))).ConfigureAwait(false); // Exponential backoff
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)))
+                    .ConfigureAwait(false); // Exponential backoff
             }
-        }
 
         return Result.Failure("Operation failed after all retry attempts");
     }
