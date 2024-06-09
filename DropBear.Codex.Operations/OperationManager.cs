@@ -10,10 +10,10 @@ namespace DropBear.Codex.Operations;
 
 public class OperationManager
 {
-    private readonly List<Exception> _exceptions = [];
+    private readonly List<Exception> _exceptions = new();
     private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = [];
-    private readonly List<Func<Task<object>>> _rollbackOperations = [];
+    private readonly List<Func<Task<object>>> _operations = new();
+    private readonly List<Func<Task<object>>> _rollbackOperations = new();
 
     public IReadOnlyList<Func<Task<object>>> Operations
     {
@@ -43,6 +43,7 @@ public class OperationManager
     public event EventHandler<EventArgs>? OperationCompleted;
     public event EventHandler<OperationFailedEventArgs>? OperationFailed;
     public event EventHandler<EventArgs>? RollbackStarted;
+    public event EventHandler<ProgressEventArgs>? ProgressChanged;
 
     public void AddOperation<T>(Func<Task<Result<T>>> operation, Func<Task<Result>> rollbackOperation)
     {
@@ -73,6 +74,9 @@ public class OperationManager
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
+        var totalOperations = operationsCopy.Count;
+        var completedOperations = 0;
+
         foreach (var operation in operationsCopy)
         {
             OperationStarted?.Invoke(this, EventArgs.Empty);
@@ -86,6 +90,11 @@ public class OperationManager
             }
 
             OperationCompleted?.Invoke(this, EventArgs.Empty);
+            completedOperations++;
+            var progressPercentage = (int)(completedOperations / (double)totalOperations * 100);
+            ProgressChanged?.Invoke(this,
+                new ProgressEventArgs(progressPercentage,
+                    $"Completed {completedOperations} of {totalOperations} operations."));
         }
 
         if (_exceptions.Count is not 0)
@@ -114,6 +123,9 @@ public class OperationManager
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
+        var totalOperations = operationsCopy.Count;
+        var completedOperations = 0;
+
         foreach (var operation in operationsCopy)
         {
             OperationStarted?.Invoke(this, EventArgs.Empty);
@@ -134,6 +146,12 @@ public class OperationManager
                     OperationCompleted?.Invoke(this, EventArgs.Empty);
                     break;
             }
+
+            completedOperations++;
+            var progressPercentage = (int)(completedOperations / (double)totalOperations * 100);
+            ProgressChanged?.Invoke(this,
+                new ProgressEventArgs(progressPercentage,
+                    $"Completed {completedOperations} of {totalOperations} operations."));
         }
 
         if (_exceptions.Count is not 0)
@@ -167,7 +185,7 @@ public class OperationManager
             }
         }
 
-        return rollbackExceptions.Count == 0
+        return rollbackExceptions.Count is 0
             ? Result.Success()
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }

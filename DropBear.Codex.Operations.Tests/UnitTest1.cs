@@ -90,4 +90,25 @@ public class OperationManagerTests
         Assert.IsFalse(operationFailedTriggered);
         Assert.IsFalse(rollbackStartedTriggered);
     }
+
+    [Test]
+    public async Task ExecuteAsync_ShouldTriggerProgressEvents()
+    {
+        var progressEvents = new List<int>();
+        _operationManager.ProgressChanged += (sender, args) =>
+        {
+            progressEvents.Add(args.ProgressPercentage);
+            Console.WriteLine($"Progress: {args.ProgressPercentage}%, Message: {args.Message}");
+        };
+
+        Func<Task<Result>> operation = async () => Result.Success();
+        _operationManager.AddOperation(operation, async () => Result.Success());
+        _operationManager.AddOperation(operation, async () => Result.Success());
+
+        await _operationManager.ExecuteAsync();
+
+        Assert.AreEqual(2, progressEvents.Count);
+        Assert.AreEqual(50, progressEvents[0]);
+        Assert.AreEqual(100, progressEvents[1]);
+    }
 }
