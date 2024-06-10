@@ -6,7 +6,7 @@ using DropBear.Codex.Core;
 namespace DropBear.Codex.Operations.Tests;
 
 [TestFixture]
-public class OperationManagerTests
+public class OperationManagerTests : IDisposable
 {
     [SetUp]
     public void SetUp()
@@ -14,7 +14,15 @@ public class OperationManagerTests
         _operationManager = new OperationManager();
     }
 
+    [TearDown]
+    public void TearDown()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
     private OperationManager _operationManager;
+    private bool _disposedValue;
 
     [Test]
     public void Operations_ShouldBeEmpty_OnInitialization()
@@ -110,5 +118,39 @@ public class OperationManagerTests
         Assert.AreEqual(2, progressEvents.Count);
         Assert.AreEqual(50, progressEvents[0]);
         Assert.AreEqual(100, progressEvents[1]);
+    }
+
+    [Test]
+    public async Task ExecuteAsync_ShouldTriggerLogEvents()
+    {
+        var logMessages = new List<string>();
+        _operationManager.Log += (sender, args) =>
+        {
+            logMessages.Add(args.Message);
+            Console.WriteLine($"Log: {args.Message}");
+        };
+
+        Func<Task<Result>> operation = async () => Result.Success();
+        _operationManager.AddOperation(operation, async () => Result.Success());
+
+        await _operationManager.ExecuteAsync();
+
+        Assert.IsNotEmpty(logMessages);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposedValue)
+        {
+            if (disposing) _operationManager?.Dispose();
+
+            _disposedValue = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 }
