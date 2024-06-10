@@ -14,10 +14,10 @@ namespace DropBear.Codex.Operations;
 /// </summary>
 public class OperationManager : IDisposable
 {
-    private readonly List<Exception> _exceptions = new();
+    private readonly List<Exception> _exceptions = [];
     private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = new();
-    private readonly List<Func<Task<object>>> _rollbackOperations = new();
+    private readonly List<Func<Task<object>>> _operations = [];
+    private readonly List<Func<Task<object>>> _rollbackOperations = [];
     private readonly CancellationTokenSource _cancellationTokenSource = new();
 
     public IReadOnlyList<Func<Task<object>>> Operations
@@ -47,7 +47,7 @@ public class OperationManager : IDisposable
     /// <summary>
     ///     Releases the resources used by the OperationManager.
     /// </summary>
-    public void Dispose() => _cancellationTokenSource?.Dispose();
+    public void Dispose() => _cancellationTokenSource.Dispose();
 
     public event EventHandler<EventArgs>? OperationStarted;
     public event EventHandler<EventArgs>? OperationCompleted;
@@ -65,7 +65,7 @@ public class OperationManager : IDisposable
     /// <exception cref="ArgumentNullException">Thrown if operation or rollbackOperation is null.</exception>
     public void AddOperation<T>(Func<Task<Result<T>>> operation, Func<Task<Result>> rollbackOperation)
     {
-        if (operation == null || rollbackOperation == null)
+        if (operation is null || rollbackOperation is null)
             throw new ArgumentNullException(nameof(operation), "Operations cannot be null");
 
         lock (_lock)
@@ -86,7 +86,7 @@ public class OperationManager : IDisposable
     /// <exception cref="ArgumentNullException">Thrown if operation or rollbackOperation is null.</exception>
     public void AddOperation<T>(Func<Task<T>> operation, Func<Task<Result>> rollbackOperation)
     {
-        if (operation == null || rollbackOperation == null)
+        if (operation is null || rollbackOperation is null)
             throw new ArgumentNullException(nameof(operation), "Operations cannot be null");
 
         lock (_lock)
@@ -108,8 +108,8 @@ public class OperationManager : IDisposable
         List<Func<Task<object>>> rollbackOperationsCopy;
         lock (_lock)
         {
-            operationsCopy = new List<Func<Task<object>>>(_operations);
-            rollbackOperationsCopy = new List<Func<Task<object>>>(_rollbackOperations);
+            operationsCopy = [.._operations];
+            rollbackOperationsCopy = [.._rollbackOperations];
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
@@ -181,8 +181,8 @@ public class OperationManager : IDisposable
         List<Func<Task<object>>> rollbackOperationsCopy;
         lock (_lock)
         {
-            operationsCopy = new List<Func<Task<object>>>(_operations);
-            rollbackOperationsCopy = new List<Func<Task<object>>>(_rollbackOperations);
+            operationsCopy = [.._operations];
+            rollbackOperationsCopy = [.._rollbackOperations];
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
@@ -273,7 +273,7 @@ public class OperationManager : IDisposable
             }
         });
 
-        await Task.WhenAll(rollbackTasks);
+        await Task.WhenAll(rollbackTasks).ConfigureAwait(false);
 
         return rollbackExceptions.Count is 0
             ? Result.Success()
@@ -297,7 +297,7 @@ public class OperationManager : IDisposable
                 var resultTask = timeout.HasValue
                     ? await Task.WhenAny(operation(), Task.Delay(timeout.Value)).ConfigureAwait(false) as Task<T>
                     : operation();
-                if (resultTask != null) return await resultTask.ConfigureAwait(false);
+                if (resultTask is not null) return (await resultTask.ConfigureAwait(false))!;
             }
             catch (Exception ex)
             {
