@@ -8,10 +8,6 @@ using DropBear.Codex.Core;
 
 namespace DropBear.Codex.Operations;
 
-/// <summary>
-///     Manages transactions, ensuring all operations are executed successfully or rolled back in case of failure, with
-///     added enhancements.
-/// </summary>
 public class OperationManager : IDisposable
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
@@ -44,9 +40,6 @@ public class OperationManager : IDisposable
         }
     }
 
-    /// <summary>
-    ///     Releases the resources used by the OperationManager.
-    /// </summary>
     public void Dispose() => _cancellationTokenSource.Dispose();
 
     public event EventHandler<EventArgs>? OperationStarted;
@@ -56,13 +49,6 @@ public class OperationManager : IDisposable
     public event EventHandler<ProgressEventArgs>? ProgressChanged;
     public event EventHandler<LogEventArgs>? Log;
 
-    /// <summary>
-    ///     Adds an operation and its corresponding rollback operation to the manager.
-    /// </summary>
-    /// <typeparam name="T">The type of the result returned by the operation.</typeparam>
-    /// <param name="operation">The operation to execute.</param>
-    /// <param name="rollbackOperation">The rollback operation to execute in case of failure.</param>
-    /// <exception cref="ArgumentNullException">Thrown if operation or rollbackOperation is null.</exception>
     public void AddOperation<T>(Func<Task<Result<T>>> operation, Func<Task<Result>> rollbackOperation)
     {
         if (operation is null || rollbackOperation is null)
@@ -77,13 +63,6 @@ public class OperationManager : IDisposable
         LogMessage("Operation and rollback operation added.");
     }
 
-    /// <summary>
-    ///     Adds an operation and its corresponding rollback operation to the manager.
-    /// </summary>
-    /// <typeparam name="T">The type of the result returned by the operation.</typeparam>
-    /// <param name="operation">The operation to execute.</param>
-    /// <param name="rollbackOperation">The rollback operation to execute in case of failure.</param>
-    /// <exception cref="ArgumentNullException">Thrown if operation or rollbackOperation is null.</exception>
     public void AddOperation<T>(Func<Task<T>> operation, Func<Task<Result>> rollbackOperation)
     {
         if (operation is null || rollbackOperation is null)
@@ -98,10 +77,6 @@ public class OperationManager : IDisposable
         LogMessage("Operation and rollback operation added.");
     }
 
-    /// <summary>
-    ///     Executes all operations and rolls back in case of failure.
-    /// </summary>
-    /// <returns>A Result indicating the success or failure of the operation execution.</returns>
     public async Task<Result> ExecuteAsync()
     {
         List<Func<Task<object>>> operationsCopy;
@@ -170,11 +145,6 @@ public class OperationManager : IDisposable
         return Result.Success();
     }
 
-    /// <summary>
-    ///     Executes all operations and rolls back in case of failure, returning a result of type T.
-    /// </summary>
-    /// <typeparam name="T">The type of the result returned by the operations.</typeparam>
-    /// <returns>A Result of type T indicating the success or failure of the operation execution.</returns>
     public async Task<Result<List<T>>> ExecuteWithResultsAsync<T>()
     {
         List<Func<Task<object>>> operationsCopy;
@@ -210,9 +180,17 @@ public class OperationManager : IDisposable
                     break;
                 }
 
-                if (result is T typedResult)
+                if (result is Result<T> typedResult && typedResult.IsSuccess)
                 {
-                    results.Add(typedResult);
+                    results.Add(typedResult.Value);
+                }
+                else
+                {
+                    var exception = new InvalidOperationException("Unexpected operation result type.");
+                    _exceptions.Add(exception);
+                    OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                    LogMessage("Unexpected operation result type.");
+                    break;
                 }
 
                 OperationCompleted?.Invoke(this, EventArgs.Empty);
@@ -247,11 +225,6 @@ public class OperationManager : IDisposable
         return Result<List<T>>.Success(results);
     }
 
-    /// <summary>
-    ///     Executes the rollback operations in case of failure.
-    /// </summary>
-    /// <param name="rollbackOperations">The rollback operations to execute.</param>
-    /// <returns>A Result indicating the success or failure of the rollback operations.</returns>
     private static async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
     {
         var rollbackExceptions = new List<Exception>();
@@ -277,14 +250,6 @@ public class OperationManager : IDisposable
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
 
-    /// <summary>
-    ///     Executes an operation with retry and timeout logic.
-    /// </summary>
-    /// <typeparam name="T">The type of the result returned by the operation.</typeparam>
-    /// <param name="operation">The operation to execute.</param>
-    /// <param name="retryCount">The number of retry attempts.</param>
-    /// <param name="timeout">The timeout for the operation.</param>
-    /// <returns>The result of the operation execution.</returns>
     private static async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, int retryCount = 3,
         TimeSpan? timeout = null)
     {
@@ -306,11 +271,6 @@ public class OperationManager : IDisposable
         return Result<T>.Failure("Operation failed after all retry attempts");
     }
 
-    /// <summary>
-    ///     Reports the progress of the operations.
-    /// </summary>
-    /// <param name="completedOperations">The number of completed operations.</param>
-    /// <param name="totalOperations">The total number of operations.</param>
     private void ReportProgress(int completedOperations, int totalOperations)
     {
         var progressPercentage = (int)(completedOperations / (double)totalOperations * 100);
@@ -321,14 +281,7 @@ public class OperationManager : IDisposable
             $"Progress: {progressPercentage}% - Completed {completedOperations} of {totalOperations} operations.");
     }
 
-    /// <summary>
-    ///     Logs a message.
-    /// </summary>
-    /// <param name="message">The message to log.</param>
     private void LogMessage(string message) => Log?.Invoke(this, new LogEventArgs(message));
 
-    /// <summary>
-    ///     Cancels the ongoing operations.
-    /// </summary>
     public void Cancel() => _cancellationTokenSource.Cancel();
 }

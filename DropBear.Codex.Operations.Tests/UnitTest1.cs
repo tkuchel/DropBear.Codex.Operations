@@ -138,6 +138,37 @@ public class OperationManagerTests : IDisposable
         Assert.IsNotEmpty(logMessages);
     }
 
+    [Test]
+    public async Task ExecuteWithResultsAsync_ShouldReturnResults()
+    {
+        Func<Task<Result<int>>> operation1 = async () => Result<int>.Success(1);
+        Func<Task<Result<int>>> operation2 = async () => Result<int>.Success(2);
+        Func<Task<Result>> rollbackOperation = async () => Result.Success();
+
+        _operationManager.AddOperation(operation1, rollbackOperation);
+        _operationManager.AddOperation(operation2, rollbackOperation);
+
+        var result = await _operationManager.ExecuteWithResultsAsync<int>();
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(2, result.Value.Count);
+        Assert.AreEqual(1, result.Value[0]);
+        Assert.AreEqual(2, result.Value[1]);
+    }
+
+    [Test]
+    public async Task ExecuteWithResultsAsync_ShouldRollbackOnFailure()
+    {
+        Func<Task<Result<int>>> failingOperation = async () => Result<int>.Failure("Operation failed");
+        Func<Task<Result>> rollbackOperation = async () => Result.Success();
+        _operationManager.AddOperation(failingOperation, rollbackOperation);
+
+        var result = await _operationManager.ExecuteWithResultsAsync<int>();
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual(1, _operationManager.RollbackOperations.Count);
+    }
+
     protected virtual void Dispose(bool disposing)
     {
         if (!_disposedValue)
