@@ -14,11 +14,11 @@ namespace DropBear.Codex.Operations;
 /// </summary>
 public class OperationManager : IDisposable
 {
-    private readonly List<Exception> _exceptions = [];
-    private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = [];
-    private readonly List<Func<Task<object>>> _rollbackOperations = [];
     private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private readonly List<Exception> _exceptions = new();
+    private readonly object _lock = new();
+    private readonly List<Func<Task<object>>> _operations = new();
+    private readonly List<Func<Task<object>>> _rollbackOperations = new();
 
     public IReadOnlyList<Func<Task<object>>> Operations
     {
@@ -108,8 +108,8 @@ public class OperationManager : IDisposable
         List<Func<Task<object>>> rollbackOperationsCopy;
         lock (_lock)
         {
-            operationsCopy = [.._operations];
-            rollbackOperationsCopy = [.._rollbackOperations];
+            operationsCopy = new List<Func<Task<object>>>(_operations);
+            rollbackOperationsCopy = new List<Func<Task<object>>>(_rollbackOperations);
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
@@ -153,7 +153,7 @@ public class OperationManager : IDisposable
             return Result.Failure(new Collection<Exception>(_exceptions));
         }
 
-        if (_exceptions.Count is not 0)
+        if (_exceptions.Count != 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             LogMessage("Starting rollback due to failures.");
@@ -175,19 +175,20 @@ public class OperationManager : IDisposable
     /// </summary>
     /// <typeparam name="T">The type of the result returned by the operations.</typeparam>
     /// <returns>A Result of type T indicating the success or failure of the operation execution.</returns>
-    public async Task<Result<T>> ExecuteAsync<T>()
+    public async Task<Result<List<T>>> ExecuteWithResultsAsync<T>()
     {
         List<Func<Task<object>>> operationsCopy;
         List<Func<Task<object>>> rollbackOperationsCopy;
         lock (_lock)
         {
-            operationsCopy = [.._operations];
-            rollbackOperationsCopy = [.._rollbackOperations];
+            operationsCopy = new List<Func<Task<object>>>(_operations);
+            rollbackOperationsCopy = new List<Func<Task<object>>>(_rollbackOperations);
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
         var totalOperations = operationsCopy.Count;
         var completedOperations = 0;
+        var results = new List<T>();
 
         LogMessage($"Starting execution of {totalOperations} operations.");
 
@@ -200,26 +201,22 @@ public class OperationManager : IDisposable
                 OperationStarted?.Invoke(this, EventArgs.Empty);
                 LogMessage("Operation started.");
                 var result = await ExecuteOperationAsync(operation).ConfigureAwait(false);
-                switch (result)
+                if (result is Result { IsSuccess: false } res)
                 {
-                    case Result { IsSuccess: false } res:
-                        var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
-                        _exceptions.Add(exception);
-                        OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
-                        LogMessage($"Operation failed: {res.ErrorMessage}");
-                        break;
-                    case Result<T> { IsSuccess: false } typedRes:
-                        var typedException = new InvalidOperationException(typedRes.ErrorMessage, typedRes.Exception);
-                        _exceptions.Add(typedException);
-                        OperationFailed?.Invoke(this, new OperationFailedEventArgs(typedException));
-                        LogMessage($"Operation failed: {typedRes.ErrorMessage}");
-                        break;
-                    default:
-                        OperationCompleted?.Invoke(this, EventArgs.Empty);
-                        LogMessage("Operation completed.");
-                        break;
+                    var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
+                    _exceptions.Add(exception);
+                    OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                    LogMessage($"Operation failed: {res.ErrorMessage}");
+                    break;
                 }
 
+                if (result is T typedResult)
+                {
+                    results.Add(typedResult);
+                }
+
+                OperationCompleted?.Invoke(this, EventArgs.Empty);
+                LogMessage("Operation completed.");
                 completedOperations++;
                 ReportProgress(completedOperations, totalOperations);
             }
@@ -227,27 +224,27 @@ public class OperationManager : IDisposable
         catch (OperationCanceledException)
         {
             LogMessage("Operation was canceled.");
-            return Result<T>.Failure(new Collection<Exception>(_exceptions));
+            return Result<List<T>>.Failure(new Collection<Exception>(_exceptions));
         }
         catch (Exception ex)
         {
             _exceptions.Add(ex);
-            return Result<T>.Failure(new Collection<Exception>(_exceptions));
+            return Result<List<T>>.Failure(new Collection<Exception>(_exceptions));
         }
 
-        if (_exceptions.Count is not 0)
+        if (_exceptions.Count != 0)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             LogMessage("Starting rollback due to failures.");
             var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy).ConfigureAwait(false);
             return rollbackResult.IsSuccess
-                ? Result<T>.Failure(new Collection<Exception>(_exceptions))
-                : Result<T>.Failure(rollbackResult.ErrorMessage);
+                ? Result<List<T>>.Failure(new Collection<Exception>(_exceptions))
+                : Result<List<T>>.Failure(rollbackResult.ErrorMessage);
         }
 
         scope.Complete();
         LogMessage("All operations completed successfully.");
-        return Result<T>.Success(default!);
+        return Result<List<T>>.Success(results);
     }
 
     /// <summary>
@@ -275,7 +272,7 @@ public class OperationManager : IDisposable
 
         await Task.WhenAll(rollbackTasks).ConfigureAwait(false);
 
-        return rollbackExceptions.Count is 0
+        return rollbackExceptions.Count == 0
             ? Result.Success()
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
