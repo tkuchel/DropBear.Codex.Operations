@@ -13,10 +13,10 @@ public class OperationManager : IDisposable
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly List<Exception> _exceptions = new();
     private readonly object _lock = new();
-    private readonly List<Func<Task<object>>> _operations = new();
-    private readonly List<Func<Task<object>>> _rollbackOperations = new();
+    private readonly List<(Func<Task<object>>, TimeSpan?)> _operations = new();
+    private readonly List<(Func<Task<object>>, TimeSpan?)> _rollbackOperations = new();
 
-    public IReadOnlyList<Func<Task<object>>> Operations
+    public IReadOnlyList<(Func<Task<object>>, TimeSpan?)> Operations
     {
         [DebuggerStepThrough]
         get
@@ -28,7 +28,7 @@ public class OperationManager : IDisposable
         }
     }
 
-    public IReadOnlyList<Func<Task<object>>> RollbackOperations
+    public IReadOnlyList<(Func<Task<object>>, TimeSpan?)> RollbackOperations
     {
         [DebuggerStepThrough]
         get
@@ -49,29 +49,30 @@ public class OperationManager : IDisposable
     public event EventHandler<ProgressEventArgs>? ProgressChanged;
     public event EventHandler<LogEventArgs>? Log;
 
-    public void AddOperation<T>(Func<Task<Result<T>>> operation, Func<Task<Result>> rollbackOperation)
+    public void AddOperation<T>(Func<Task<Result<T>>> operation, Func<Task<Result>> rollbackOperation,
+        TimeSpan? timeout = null)
     {
         if (operation is null || rollbackOperation is null)
             throw new ArgumentNullException(nameof(operation), "Operations cannot be null");
 
         lock (_lock)
         {
-            _operations.Add(() => ExecuteOperationAsync(operation));
-            _rollbackOperations.Add(() => ExecuteOperationAsync(rollbackOperation));
+            _operations.Add((() => ExecuteOperationAsync(operation, timeout), timeout));
+            _rollbackOperations.Add((() => ExecuteOperationAsync(rollbackOperation, timeout), timeout));
         }
 
         LogMessage("Operation and rollback operation added.");
     }
 
-    public void AddOperation<T>(Func<Task<T>> operation, Func<Task<Result>> rollbackOperation)
+    public void AddOperation<T>(Func<Task<T>> operation, Func<Task<Result>> rollbackOperation, TimeSpan? timeout = null)
     {
         if (operation is null || rollbackOperation is null)
             throw new ArgumentNullException(nameof(operation), "Operations cannot be null");
 
         lock (_lock)
         {
-            _operations.Add(() => ExecuteOperationAsync(operation));
-            _rollbackOperations.Add(() => ExecuteOperationAsync(rollbackOperation));
+            _operations.Add((() => ExecuteOperationAsync(operation, timeout), timeout));
+            _rollbackOperations.Add((() => ExecuteOperationAsync(rollbackOperation, timeout), timeout));
         }
 
         LogMessage("Operation and rollback operation added.");
@@ -79,12 +80,12 @@ public class OperationManager : IDisposable
 
     public async Task<Result> ExecuteAsync()
     {
-        List<Func<Task<object>>> operationsCopy;
-        List<Func<Task<object>>> rollbackOperationsCopy;
+        List<(Func<Task<object>>, TimeSpan?)> operationsCopy;
+        List<(Func<Task<object>>, TimeSpan?)> rollbackOperationsCopy;
         lock (_lock)
         {
-            operationsCopy = new List<Func<Task<object>>>(_operations);
-            rollbackOperationsCopy = new List<Func<Task<object>>>(_rollbackOperations);
+            operationsCopy = new List<(Func<Task<object>>, TimeSpan?)>(_operations);
+            rollbackOperationsCopy = new List<(Func<Task<object>>, TimeSpan?)>(_rollbackOperations);
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
@@ -95,13 +96,13 @@ public class OperationManager : IDisposable
 
         try
         {
-            foreach (var operation in operationsCopy)
+            foreach (var (operation, timeout) in operationsCopy)
             {
                 _cancellationTokenSource.Token.ThrowIfCancellationRequested();
 
                 OperationStarted?.Invoke(this, EventArgs.Empty);
                 LogMessage("Operation started.");
-                var result = await ExecuteOperationAsync(operation).ConfigureAwait(false);
+                var result = await ExecuteOperationAsync(operation, timeout).ConfigureAwait(false);
                 if (result is Result { IsSuccess: false } res)
                 {
                     var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
@@ -147,12 +148,12 @@ public class OperationManager : IDisposable
 
     public async Task<Result<List<T>>> ExecuteWithResultsAsync<T>()
     {
-        List<Func<Task<object>>> operationsCopy;
-        List<Func<Task<object>>> rollbackOperationsCopy;
+        List<(Func<Task<object>>, TimeSpan?)> operationsCopy;
+        List<(Func<Task<object>>, TimeSpan?)> rollbackOperationsCopy;
         lock (_lock)
         {
-            operationsCopy = new List<Func<Task<object>>>(_operations);
-            rollbackOperationsCopy = new List<Func<Task<object>>>(_rollbackOperations);
+            operationsCopy = new List<(Func<Task<object>>, TimeSpan?)>(_operations);
+            rollbackOperationsCopy = new List<(Func<Task<object>>, TimeSpan?)>(_rollbackOperations);
         }
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
@@ -164,13 +165,13 @@ public class OperationManager : IDisposable
 
         try
         {
-            foreach (var operation in operationsCopy)
+            foreach (var (operation, timeout) in operationsCopy)
             {
                 _cancellationTokenSource.Token.ThrowIfCancellationRequested();
 
                 OperationStarted?.Invoke(this, EventArgs.Empty);
                 LogMessage("Operation started.");
-                var result = await ExecuteOperationAsync(operation).ConfigureAwait(false);
+                var result = await ExecuteOperationAsync(operation, timeout).ConfigureAwait(false);
                 if (result is Result { IsSuccess: false } res)
                 {
                     var exception = new InvalidOperationException(res.ErrorMessage, res.Exception);
@@ -225,13 +226,14 @@ public class OperationManager : IDisposable
         return Result<List<T>>.Success(results);
     }
 
-    private static async Task<Result> ExecuteRollbacksAsync(List<Func<Task<object>>> rollbackOperations)
+    private static async Task<Result> ExecuteRollbacksAsync(List<(Func<Task<object>>, TimeSpan?)> rollbackOperations)
     {
         var rollbackExceptions = new List<Exception>();
 
-        var rollbackTasks = rollbackOperations.Select(async rollbackOperation =>
+        var rollbackTasks = rollbackOperations.Select(async tuple =>
         {
-            var result = await ExecuteOperationAsync(rollbackOperation).ConfigureAwait(false);
+            var (rollbackOperation, timeout) = tuple;
+            var result = await ExecuteOperationAsync(rollbackOperation, timeout).ConfigureAwait(false);
             if (result is Result { IsSuccess: false } res)
             {
                 rollbackExceptions.Add(new InvalidOperationException(res.ErrorMessage, res.Exception));
@@ -250,8 +252,8 @@ public class OperationManager : IDisposable
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
 
-    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, int retryCount = 3,
-        TimeSpan? timeout = null)
+    private static async Task<object> ExecuteOperationAsync<T>(Func<Task<T>> operation, TimeSpan? timeout = null,
+        int retryCount = 3)
     {
         for (var attempt = 0; attempt < retryCount; attempt++)
             try
