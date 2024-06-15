@@ -1,6 +1,3 @@
-// File: OperationManagerTests.cs
-// Description: Unit tests for the OperationManager class.
-
 using DropBear.Codex.Core;
 
 namespace DropBear.Codex.Operations.Tests;
@@ -11,7 +8,7 @@ public class OperationManagerTests : IDisposable
     [SetUp]
     public void SetUp()
     {
-        _operationManager = new OperationManager();
+        _operationManager = new OperationManagerBuilder().Build();
     }
 
     [TearDown]
@@ -39,10 +36,14 @@ public class OperationManagerTests : IDisposable
     [Test]
     public void AddOperation_ShouldAddOperationAndRollbackOperation()
     {
-        Func<Task<Result<int>>> operation = async () => Result<int>.Success(1);
-        Func<Task<Result>> rollbackOperation = async () => Result.Success();
+        var operation = new OperationBuilder()
+            .WithExecuteAsync(async ct => Result.Success())
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
 
-        _operationManager.AddOperation(operation, rollbackOperation);
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation)
+            .Build();
 
         Assert.AreEqual(1, _operationManager.Operations.Count);
         Assert.AreEqual(1, _operationManager.RollbackOperations.Count);
@@ -51,8 +52,14 @@ public class OperationManagerTests : IDisposable
     [Test]
     public async Task ExecuteAsync_ShouldExecuteAllOperationsSuccessfully()
     {
-        Func<Task<Result>> operation = async () => Result.Success();
-        _operationManager.AddOperation(operation, async () => Result.Success());
+        var operation = new OperationBuilder()
+            .WithExecuteAsync(async ct => Result.Success())
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation)
+            .Build();
 
         var result = await _operationManager.ExecuteAsync();
 
@@ -62,9 +69,14 @@ public class OperationManagerTests : IDisposable
     [Test]
     public async Task ExecuteAsync_ShouldRollbackOnFailure()
     {
-        Func<Task<Result>> failingOperation = async () => Result.Failure("Operation failed");
-        Func<Task<Result>> rollbackOperation = async () => Result.Success();
-        _operationManager.AddOperation(failingOperation, rollbackOperation);
+        var failingOperation = new OperationBuilder()
+            .WithExecuteAsync(async ct => Result.Failure("Operation failed"))
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(failingOperation)
+            .Build();
 
         var result = await _operationManager.ExecuteAsync();
 
@@ -83,13 +95,18 @@ public class OperationManagerTests : IDisposable
         var operationFailedTriggered = false;
         var rollbackStartedTriggered = false;
 
-        _operationManager.OperationStarted += (sender, args) => operationStartedTriggered = true;
-        _operationManager.OperationCompleted += (sender, args) => operationCompletedTriggered = true;
-        _operationManager.OperationFailed += (sender, args) => operationFailedTriggered = true;
-        _operationManager.RollbackStarted += (sender, args) => rollbackStartedTriggered = true;
+        var operation = new OperationBuilder()
+            .WithExecuteAsync(async ct => Result.Success())
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
 
-        Func<Task<Result>> operation = async () => Result.Success();
-        _operationManager.AddOperation(operation, async () => Result.Success());
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation)
+            .OnOperationStarted((sender, args) => operationStartedTriggered = true)
+            .OnOperationCompleted((sender, args) => operationCompletedTriggered = true)
+            .OnOperationFailed((sender, args) => operationFailedTriggered = true)
+            .OnRollbackStarted((sender, args) => rollbackStartedTriggered = true)
+            .Build();
 
         await _operationManager.ExecuteAsync();
 
@@ -103,35 +120,61 @@ public class OperationManagerTests : IDisposable
     public async Task ExecuteAsync_ShouldTriggerProgressEvents()
     {
         var progressEvents = new List<int>();
-        _operationManager.ProgressChanged += (sender, args) =>
-        {
-            progressEvents.Add(args.ProgressPercentage);
-            Console.WriteLine($"Progress: {args.ProgressPercentage}%, Message: {args.Message}");
-        };
 
-        Func<Task<Result>> operation = async () => Result.Success();
-        _operationManager.AddOperation(operation, async () => Result.Success());
-        _operationManager.AddOperation(operation, async () => Result.Success());
+        var operation = new OperationBuilder()
+            .WithExecuteAsync(async ct =>
+            {
+                for (var i = 0; i < 2; i++)
+                {
+                    await Task.Delay(50, ct);
+                    var progressPercentage = 50 * (i + 1);
+                    // Use the OnProgressChanged method here
+                    _operationManager.OnProgressChanged(new ProgressEventArgs(progressPercentage,
+                        $"Progress: {progressPercentage}%"));
+                }
+
+                return Result.Success();
+            })
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation)
+            .OnProgressChanged((sender, args) =>
+            {
+                progressEvents.Add(args.ProgressPercentage);
+                Console.WriteLine($"Progress: {args.ProgressPercentage}%, Message: {args.Message}");
+            })
+            .Build();
 
         await _operationManager.ExecuteAsync();
 
-        Assert.AreEqual(2, progressEvents.Count);
+        Assert.AreEqual(3,
+            progressEvents.Count); // Expect 1 operation with 2 progress updates + 1 final progress update
         Assert.AreEqual(50, progressEvents[0]);
         Assert.AreEqual(100, progressEvents[1]);
+        Assert.AreEqual(100, progressEvents[2]);
     }
+
 
     [Test]
     public async Task ExecuteAsync_ShouldTriggerLogEvents()
     {
         var logMessages = new List<string>();
-        _operationManager.Log += (sender, args) =>
-        {
-            logMessages.Add(args.Message);
-            Console.WriteLine($"Log: {args.Message}");
-        };
 
-        Func<Task<Result>> operation = async () => Result.Success();
-        _operationManager.AddOperation(operation, async () => Result.Success());
+        var operation = new OperationBuilder()
+            .WithExecuteAsync(async ct => Result.Success())
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation)
+            .OnLog((sender, args) =>
+            {
+                logMessages.Add(args.Message);
+                Console.WriteLine($"Log: {args.Message}");
+            })
+            .Build();
 
         await _operationManager.ExecuteAsync();
 
@@ -141,12 +184,20 @@ public class OperationManagerTests : IDisposable
     [Test]
     public async Task ExecuteWithResultsAsync_ShouldReturnResults()
     {
-        Func<Task<Result<int>>> operation1 = async () => Result<int>.Success(1);
-        Func<Task<Result<int>>> operation2 = async () => Result<int>.Success(2);
-        Func<Task<Result>> rollbackOperation = async () => Result.Success();
+        var operation1 = new OperationBuilder<int>()
+            .WithExecuteAsync(async ct => Result<int>.Success(1))
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
 
-        _operationManager.AddOperation(operation1, rollbackOperation);
-        _operationManager.AddOperation(operation2, rollbackOperation);
+        var operation2 = new OperationBuilder<int>()
+            .WithExecuteAsync(async ct => Result<int>.Success(2))
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation1)
+            .WithOperation(operation2)
+            .Build();
 
         var result = await _operationManager.ExecuteWithResultsAsync<int>();
 
@@ -159,14 +210,64 @@ public class OperationManagerTests : IDisposable
     [Test]
     public async Task ExecuteWithResultsAsync_ShouldRollbackOnFailure()
     {
-        Func<Task<Result<int>>> failingOperation = async () => Result<int>.Failure("Operation failed");
-        Func<Task<Result>> rollbackOperation = async () => Result.Success();
-        _operationManager.AddOperation(failingOperation, rollbackOperation);
+        var failingOperation = new OperationBuilder<int>()
+            .WithExecuteAsync(async ct => Result<int>.Failure("Operation failed"))
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(failingOperation)
+            .Build();
 
         var result = await _operationManager.ExecuteWithResultsAsync<int>();
 
         Assert.IsFalse(result.IsSuccess);
         Assert.AreEqual(1, _operationManager.RollbackOperations.Count);
+    }
+
+    [Test]
+    public async Task ExecuteWithResultsAsync_WithCancellationToken_ShouldSucceedBeforeTimeout()
+    {
+        var operation = new OperationBuilder<int>()
+            .WithExecuteAsync(async ct =>
+            {
+                await Task.Delay(100, ct); // Simulate some work
+                return Result<int>.Success(1);
+            })
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation)
+            .Build();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        var result = await _operationManager.ExecuteWithResultsAsync<int>(cts.Token);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(1, result.Value[0]);
+    }
+
+    [Test]
+    public async Task ExecuteWithResultsAsync_WithCancellationToken_ShouldFailAfterTimeout()
+    {
+        var operation = new OperationBuilder<int>()
+            .WithExecuteAsync(async ct =>
+            {
+                await Task.Delay(2000, ct); // Simulate longer work
+                return Result<int>.Success(1);
+            })
+            .WithRollbackAsync(async ct => Result.Success())
+            .Build();
+
+        _operationManager = new OperationManagerBuilder()
+            .WithOperation(operation)
+            .Build();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var result = await _operationManager.ExecuteWithResultsAsync<int>(cts.Token);
+
+        Assert.IsFalse(result.IsSuccess);
     }
 
     protected virtual void Dispose(bool disposing)

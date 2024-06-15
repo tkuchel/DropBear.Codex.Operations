@@ -1,8 +1,5 @@
-﻿// File: OperationManager.cs
-// Description: Manages transactions, ensuring all operations are executed successfully or rolled back in case of failure, with added enhancements.
-
+﻿using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Transactions;
 using DropBear.Codex.Core;
 
@@ -11,36 +8,18 @@ namespace DropBear.Codex.Operations;
 public class OperationManager : IDisposable
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly List<Exception> _exceptions = new();
-    private readonly object _lock = new();
-    private readonly List<IOperation> _operations = new();
-    private readonly List<IOperation> _rollbackOperations = new();
+    private readonly ConcurrentBag<Exception> _exceptions = new();
+    private readonly ConcurrentQueue<IOperation> _operations = new();
+    private readonly ConcurrentQueue<IOperation> _rollbackOperations = new();
 
-    public IReadOnlyList<IOperation> Operations
-    {
-        [DebuggerStepThrough]
-        get
-        {
-            lock (_lock)
-            {
-                return _operations.AsReadOnly();
-            }
-        }
-    }
+    public IReadOnlyCollection<IOperation> Operations => new ReadOnlyCollection<IOperation>(_operations.ToList());
 
-    public IReadOnlyList<IOperation> RollbackOperations
-    {
-        [DebuggerStepThrough]
-        get
-        {
-            lock (_lock)
-            {
-                return _rollbackOperations.AsReadOnly();
-            }
-        }
-    }
+    public IReadOnlyCollection<IOperation> RollbackOperations =>
+        new ReadOnlyCollection<IOperation>(_rollbackOperations.ToList());
 
     public void Dispose() => _cancellationTokenSource.Dispose();
+
+    public void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);
 
     public event EventHandler<EventArgs>? OperationStarted;
     public event EventHandler<EventArgs>? OperationCompleted;
@@ -54,24 +33,16 @@ public class OperationManager : IDisposable
         if (operation == null)
             throw new ArgumentNullException(nameof(operation), "Operation cannot be null");
 
-        lock (_lock)
-        {
-            _operations.Add(operation);
-            _rollbackOperations.Add(operation);
-        }
+        _operations.Enqueue(operation);
+        _rollbackOperations.Enqueue(operation);
 
         LogMessage("Operation and rollback operation added.");
     }
 
     public async Task<Result> ExecuteAsync(CancellationToken cancellationToken = default)
     {
-        List<IOperation> operationsCopy;
-        List<IOperation> rollbackOperationsCopy;
-        lock (_lock)
-        {
-            operationsCopy = new List<IOperation>(_operations);
-            rollbackOperationsCopy = new List<IOperation>(_rollbackOperations);
-        }
+        var operationsCopy = _operations.ToList();
+        var rollbackOperationsCopy = _rollbackOperations.ToList();
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
         var totalOperations = operationsCopy.Count;
@@ -87,6 +58,7 @@ public class OperationManager : IDisposable
 
                 OperationStarted?.Invoke(this, EventArgs.Empty);
                 LogMessage("Operation started.");
+
                 var result = await ExecuteOperationAsync(operation, cancellationToken).ConfigureAwait(false);
                 if (!result.IsSuccess)
                 {
@@ -94,7 +66,8 @@ public class OperationManager : IDisposable
                     _exceptions.Add(exception);
                     OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
                     LogMessage($"Operation failed: {result.ErrorMessage}");
-                    break;
+
+                    if (!operation.ContinueOnFailure) break;
                 }
 
                 OperationCompleted?.Invoke(this, EventArgs.Empty);
@@ -106,24 +79,25 @@ public class OperationManager : IDisposable
         catch (OperationCanceledException)
         {
             LogMessage("Operation was canceled.");
-            return Result.Failure(new Collection<Exception>(_exceptions));
+            return Result.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
         catch (Exception ex)
         {
             _exceptions.Add(ex);
-            return Result.Failure(new Collection<Exception>(_exceptions));
+            return Result.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
 
-        if (_exceptions.Count != 0)
+        if (_exceptions.Any())
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             LogMessage("Starting rollback due to failures.");
-            var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy, cancellationToken).ConfigureAwait(false);
+            var rollbackResult =
+                await ExecuteRollbacksAsync(rollbackOperationsCopy, cancellationToken).ConfigureAwait(false);
 
             if (!rollbackResult.IsSuccess)
                 _exceptions.Add(new InvalidOperationException("Rollback failed", rollbackResult.Exception));
 
-            return Result.Failure(new Collection<Exception>(_exceptions));
+            return Result.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
 
         scope.Complete();
@@ -133,13 +107,8 @@ public class OperationManager : IDisposable
 
     public async Task<Result<List<T>>> ExecuteWithResultsAsync<T>(CancellationToken cancellationToken = default)
     {
-        List<IOperation> operationsCopy;
-        List<IOperation> rollbackOperationsCopy;
-        lock (_lock)
-        {
-            operationsCopy = new List<IOperation>(_operations);
-            rollbackOperationsCopy = new List<IOperation>(_rollbackOperations);
-        }
+        var operationsCopy = _operations.ToList();
+        var rollbackOperationsCopy = _rollbackOperations.ToList();
 
         using var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
         var totalOperations = operationsCopy.Count;
@@ -156,27 +125,46 @@ public class OperationManager : IDisposable
 
                 OperationStarted?.Invoke(this, EventArgs.Empty);
                 LogMessage("Operation started.");
-                var result = await ExecuteOperationAsync(operation, cancellationToken).ConfigureAwait(false);
-                if (!result.IsSuccess)
-                {
-                    var exception = new InvalidOperationException(result.ErrorMessage, result.Exception);
-                    _exceptions.Add(exception);
-                    OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
-                    LogMessage($"Operation failed: {result.ErrorMessage}");
-                    break;
-                }
 
-                if (result is Result<T> typedResult && typedResult.IsSuccess)
+                if (operation is IOperation<T> typedOperation)
                 {
-                    results.Add(typedResult.Value);
+                    var result = await ExecuteOperationWithResultAsync(typedOperation, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!result.IsSuccess)
+                    {
+                        var exception = new InvalidOperationException(result.ErrorMessage, result.Exception);
+                        _exceptions.Add(exception);
+                        OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                        LogMessage($"Operation failed: {result.ErrorMessage}");
+
+                        if (!operation.ContinueOnFailure) break;
+                    }
+
+                    if (result.IsSuccess)
+                    {
+                        results.Add(result.Value);
+                    }
+                    else
+                    {
+                        var exception = new InvalidOperationException("Unexpected operation result type.");
+                        _exceptions.Add(exception);
+                        OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                        LogMessage("Unexpected operation result type.");
+                        break;
+                    }
                 }
                 else
                 {
-                    var exception = new InvalidOperationException("Unexpected operation result type.");
-                    _exceptions.Add(exception);
-                    OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
-                    LogMessage("Unexpected operation result type.");
-                    break;
+                    var result = await ExecuteOperationAsync(operation, cancellationToken).ConfigureAwait(false);
+                    if (!result.IsSuccess)
+                    {
+                        var exception = new InvalidOperationException(result.ErrorMessage, result.Exception);
+                        _exceptions.Add(exception);
+                        OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
+                        LogMessage($"Operation failed: {result.ErrorMessage}");
+
+                        if (!operation.ContinueOnFailure) break;
+                    }
                 }
 
                 OperationCompleted?.Invoke(this, EventArgs.Empty);
@@ -188,21 +176,22 @@ public class OperationManager : IDisposable
         catch (OperationCanceledException)
         {
             LogMessage("Operation was canceled.");
-            return Result<List<T>>.Failure(new Collection<Exception>(_exceptions));
+            return Result<List<T>>.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
         catch (Exception ex)
         {
             _exceptions.Add(ex);
-            return Result<List<T>>.Failure(new Collection<Exception>(_exceptions));
+            return Result<List<T>>.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
 
-        if (_exceptions.Count != 0)
+        if (_exceptions.Any())
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             LogMessage("Starting rollback due to failures.");
-            var rollbackResult = await ExecuteRollbacksAsync(rollbackOperationsCopy, cancellationToken).ConfigureAwait(false);
+            var rollbackResult =
+                await ExecuteRollbacksAsync(rollbackOperationsCopy, cancellationToken).ConfigureAwait(false);
             return rollbackResult.IsSuccess
-                ? Result<List<T>>.Failure(new Collection<Exception>(_exceptions))
+                ? Result<List<T>>.Failure(new Collection<Exception>(_exceptions.ToList()))
                 : Result<List<T>>.Failure(rollbackResult.ErrorMessage);
         }
 
@@ -211,7 +200,8 @@ public class OperationManager : IDisposable
         return Result<List<T>>.Success(results);
     }
 
-    private static async Task<Result> ExecuteRollbacksAsync(List<IOperation> rollbackOperations, CancellationToken cancellationToken = default)
+    private static async Task<Result> ExecuteRollbacksAsync(List<IOperation> rollbackOperations,
+        CancellationToken cancellationToken = default)
     {
         var rollbackExceptions = new List<Exception>();
 
@@ -236,15 +226,53 @@ public class OperationManager : IDisposable
             : Result.Failure(new Collection<Exception>(rollbackExceptions));
     }
 
-    private static async Task<Result> ExecuteOperationAsync(IOperation operation, CancellationToken cancellationToken = default)
+    private static async Task<Result> ExecuteOperationAsync(IOperation operation,
+        CancellationToken cancellationToken = default)
     {
+        using var timeoutCts = new CancellationTokenSource(operation.ExecuteTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
         try
         {
-            return await operation.ExecuteAsync(cancellationToken).ConfigureAwait(false);
+            var result = await operation.ExecuteAsync(linkedCts.Token).ConfigureAwait(false);
+            return result;
+        }
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            return Result.Failure("Operation canceled.", ex);
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+        {
+            return Result.Failure("Operation timed out.", ex);
         }
         catch (Exception ex)
         {
             return Result.Failure(ex.Message, ex);
+        }
+    }
+
+    private static async Task<Result<T>> ExecuteOperationWithResultAsync<T>(IOperation<T> operation,
+        CancellationToken cancellationToken = default)
+    {
+        using var timeoutCts = new CancellationTokenSource(operation.ExecuteTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        try
+        {
+            var result = await operation.ExecuteAsync(linkedCts.Token).ConfigureAwait(false);
+            return result;
+        }
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            return Result<T>.Failure("Operation canceled.", ex);
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+        {
+            return Result<T>.Failure("Operation timed out.", ex);
+        }
+        catch (Exception ex)
+        {
+            return Result<T>.Failure(ex.Message, ex);
         }
     }
 
