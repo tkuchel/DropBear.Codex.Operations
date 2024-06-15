@@ -5,11 +5,11 @@ namespace DropBear.Codex.Operations;
 public class OperationBuilder
 {
     private bool _continueOnFailure;
-    private Func<CancellationToken, Task<Result>> _executeAsync;
+    private Func<CancellationToken, Task<Result>>? _executeAsync;
     private TimeSpan _executeTimeout = TimeSpan.FromMinutes(1);
-    private EventHandler<LogEventArgs> _log;
-    private EventHandler<ProgressEventArgs> _progressChanged;
-    private Func<CancellationToken, Task<Result>> _rollbackAsync;
+    private EventHandler<LogEventArgs>? _log;
+    private EventHandler<ProgressEventArgs>? _progressChanged;
+    private Func<CancellationToken, Task<Result>>? _rollbackAsync;
     private TimeSpan _rollbackTimeout = TimeSpan.FromMinutes(1);
 
     public OperationBuilder WithExecuteAsync(Func<CancellationToken, Task<Result>> executeAsync)
@@ -65,48 +65,54 @@ public class OperationBuilder
             ContinueOnFailure = _continueOnFailure
         };
 
-        if (_progressChanged != null) operation.ProgressChanged += _progressChanged;
+        if (_progressChanged is not null) operation.ProgressChanged += _progressChanged;
 
-        if (_log != null) operation.Log += _log;
+        if (_log is not null) operation.Log += _log;
 
         return operation;
     }
 
-    private class Operation : IOperation
+    private sealed class Operation : IOperation
     {
-        public Func<CancellationToken, Task<Result>> ExecuteAsync { get; set; }
-        public Func<CancellationToken, Task<Result>> RollbackAsync { get; set; }
+        public Func<CancellationToken, Task<Result>>? ExecuteAsync { get; set; }
+        public Func<CancellationToken, Task<Result>>? RollbackAsync { get; set; }
         public TimeSpan ExecuteTimeout { get; set; }
         public TimeSpan RollbackTimeout { get; set; }
         public bool ContinueOnFailure { get; set; }
-        public event EventHandler<ProgressEventArgs> ProgressChanged;
-        public event EventHandler<LogEventArgs> Log;
+        public event EventHandler<ProgressEventArgs>? ProgressChanged;
+        public event EventHandler<LogEventArgs>? Log;
 
         async Task<Result> IOperation.ExecuteAsync(CancellationToken cancellationToken)
         {
+            if (ExecuteAsync is null) return Result.Failure("Execute not implemented.");
+
             var result = await ExecuteAsync(cancellationToken).ConfigureAwait(false);
             OnProgressChanged(new ProgressEventArgs(100, "Operation completed."));
             OnLog(new LogEventArgs("Operation completed."));
             return result;
         }
 
-        async Task<Result> IOperation.RollbackAsync(CancellationToken cancellationToken) =>
-            await RollbackAsync(cancellationToken).ConfigureAwait(false);
+        async Task<Result> IOperation.RollbackAsync(CancellationToken cancellationToken)
+        {
+            if (RollbackAsync is null) return Result.Failure("Rollback not implemented.");
 
-        protected virtual void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);
+            return await RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
 
-        protected virtual void OnLog(LogEventArgs e) => Log?.Invoke(this, e);
+        private void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);
+
+        private void OnLog(LogEventArgs e) => Log?.Invoke(this, e);
     }
 }
 
 public class OperationBuilder<T>
 {
     private bool _continueOnFailure;
-    private Func<CancellationToken, Task<Result<T>>> _executeAsync;
+    private Func<CancellationToken, Task<Result<T>>>? _executeAsync;
     private TimeSpan _executeTimeout = TimeSpan.FromMinutes(1);
-    private EventHandler<LogEventArgs> _log;
-    private EventHandler<ProgressEventArgs> _progressChanged;
-    private Func<CancellationToken, Task<Result>> _rollbackAsync;
+    private EventHandler<LogEventArgs>? _log;
+    private EventHandler<ProgressEventArgs>? _progressChanged;
+    private Func<CancellationToken, Task<Result>>? _rollbackAsync;
     private TimeSpan _rollbackTimeout = TimeSpan.FromMinutes(1);
 
     public OperationBuilder<T> WithExecuteAsync(Func<CancellationToken, Task<Result<T>>> executeAsync)
@@ -162,25 +168,27 @@ public class OperationBuilder<T>
             ContinueOnFailure = _continueOnFailure
         };
 
-        if (_progressChanged != null) operation.ProgressChanged += _progressChanged;
+        if (_progressChanged is not null) operation.ProgressChanged += _progressChanged;
 
-        if (_log != null) operation.Log += _log;
+        if (_log is not null) operation.Log += _log;
 
         return operation;
     }
 
-    private class Operation : IOperation<T>
+    private sealed class Operation : IOperation<T>
     {
-        public Func<CancellationToken, Task<Result<T>>> ExecuteAsync { get; set; }
-        public Func<CancellationToken, Task<Result>> RollbackAsync { get; set; }
+        public Func<CancellationToken, Task<Result<T>>>? ExecuteAsync { get; set; }
+        public Func<CancellationToken, Task<Result>>? RollbackAsync { get; set; }
         public TimeSpan ExecuteTimeout { get; set; }
         public TimeSpan RollbackTimeout { get; set; }
         public bool ContinueOnFailure { get; set; }
-        public event EventHandler<ProgressEventArgs> ProgressChanged;
-        public event EventHandler<LogEventArgs> Log;
+        public event EventHandler<ProgressEventArgs>? ProgressChanged;
+        public event EventHandler<LogEventArgs>? Log;
 
         async Task<Result<T>> IOperation<T>.ExecuteAsync(CancellationToken cancellationToken)
         {
+            if (ExecuteAsync is null) return Result<T>.Failure("Execute not implemented.");
+
             var result = await ExecuteAsync(cancellationToken).ConfigureAwait(false);
             OnProgressChanged(new ProgressEventArgs(100, "Operation completed."));
             OnLog(new LogEventArgs("Operation completed."));
@@ -189,17 +197,21 @@ public class OperationBuilder<T>
 
         async Task<Result> IOperation.ExecuteAsync(CancellationToken cancellationToken)
         {
+            if (ExecuteAsync is null) return Result.Failure("Execute not implemented.");
             var result = await ExecuteAsync(cancellationToken).ConfigureAwait(false);
             return result.IsSuccess
                 ? Result.Success()
-                : Result.Failure(result.ErrorMessage, result.Exception);
+                : Result.Failure(result.ErrorMessage ?? "Unknown Error", result.Exception);
         }
 
-        async Task<Result> IOperation.RollbackAsync(CancellationToken cancellationToken) =>
-            await RollbackAsync(cancellationToken).ConfigureAwait(false);
+        async Task<Result> IOperation.RollbackAsync(CancellationToken cancellationToken)
+        {
+            if (RollbackAsync is null) return Result.Failure("Rollback not implemented.");
+            return await RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
 
-        protected virtual void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);
+        private void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);
 
-        protected virtual void OnLog(LogEventArgs e) => Log?.Invoke(this, e);
+        private void OnLog(LogEventArgs e) => Log?.Invoke(this, e);
     }
 }

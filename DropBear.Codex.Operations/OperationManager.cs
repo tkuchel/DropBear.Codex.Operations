@@ -87,7 +87,7 @@ public class OperationManager : IDisposable
             return Result.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
 
-        if (_exceptions.Any())
+        if (!_exceptions.IsEmpty)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             LogMessage("Starting rollback due to failures.");
@@ -184,7 +184,7 @@ public class OperationManager : IDisposable
             return Result<List<T>>.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
 
-        if (_exceptions.Any())
+        if (!_exceptions.IsEmpty)
         {
             RollbackStarted?.Invoke(this, EventArgs.Empty);
             LogMessage("Starting rollback due to failures.");

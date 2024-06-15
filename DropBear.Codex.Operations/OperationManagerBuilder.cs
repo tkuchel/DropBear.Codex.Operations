@@ -66,8 +66,7 @@ public class OperationManagerBuilder : IDisposable
 
     public OperationManager Build()
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(OperationManagerBuilder));
-
+        ObjectDisposedException.ThrowIf(_disposed, nameof(OperationManagerBuilder));
         return _operationManager;
     }
 }
