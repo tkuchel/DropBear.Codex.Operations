@@ -24,13 +24,13 @@ public class OperationManagerTests : IDisposable
     [Test]
     public void Operations_ShouldBeEmpty_OnInitialization()
     {
-        Assert.IsEmpty(_operationManager.Operations);
+        Assert.That(_operationManager.Operations, Is.Empty);
     }
 
     [Test]
     public void RollbackOperations_ShouldBeEmpty_OnInitialization()
     {
-        Assert.IsEmpty(_operationManager.RollbackOperations);
+        Assert.That(_operationManager.RollbackOperations, Is.Empty);
     }
 
     [Test]
@@ -45,8 +45,8 @@ public class OperationManagerTests : IDisposable
             .WithOperation(operation)
             .Build();
 
-        Assert.AreEqual(1, _operationManager.Operations.Count);
-        Assert.AreEqual(1, _operationManager.RollbackOperations.Count);
+        Assert.That(_operationManager.Operations.Count, Is.EqualTo(1));
+        Assert.That(_operationManager.RollbackOperations.Count, Is.EqualTo(1));
     }
 
     [Test]
@@ -63,7 +63,7 @@ public class OperationManagerTests : IDisposable
 
         var result = await _operationManager.ExecuteAsync();
 
-        Assert.IsTrue(result.IsSuccess);
+        Assert.That(result.IsSuccess, Is.True);
     }
 
     [Test]
@@ -83,8 +83,8 @@ public class OperationManagerTests : IDisposable
         Console.WriteLine($"ExecuteAsync result: {result.IsSuccess}");
         foreach (var ex in result.Exceptions) Console.WriteLine($"Exception: {ex.Message}");
 
-        Assert.IsFalse(result.IsSuccess);
-        Assert.AreEqual(1, _operationManager.RollbackOperations.Count);
+        Assert.That(result.IsSuccess, Is.False);
+        Assert.That(_operationManager.RollbackOperations.Count, Is.EqualTo(1));
     }
 
     [Test]
@@ -110,10 +110,10 @@ public class OperationManagerTests : IDisposable
 
         await _operationManager.ExecuteAsync();
 
-        Assert.IsTrue(operationStartedTriggered);
-        Assert.IsTrue(operationCompletedTriggered);
-        Assert.IsFalse(operationFailedTriggered);
-        Assert.IsFalse(rollbackStartedTriggered);
+        Assert.That(operationStartedTriggered, Is.True);
+        Assert.That(operationCompletedTriggered, Is.True);
+        Assert.That(operationFailedTriggered, Is.False);
+        Assert.That(rollbackStartedTriggered, Is.False);
     }
 
     [Test]
@@ -128,7 +128,6 @@ public class OperationManagerTests : IDisposable
                 {
                     await Task.Delay(50, ct);
                     var progressPercentage = 50 * (i + 1);
-                    // Use the OnProgressChanged method here
                     _operationManager.OnProgressChanged(new ProgressEventArgs(progressPercentage,
                         $"Progress: {progressPercentage}%"));
                 }
@@ -149,13 +148,12 @@ public class OperationManagerTests : IDisposable
 
         await _operationManager.ExecuteAsync();
 
-        Assert.AreEqual(3,
-            progressEvents.Count); // Expect 1 operation with 2 progress updates + 1 final progress update
-        Assert.AreEqual(50, progressEvents[0]);
-        Assert.AreEqual(100, progressEvents[1]);
-        Assert.AreEqual(100, progressEvents[2]);
+        Assert.That(progressEvents.Count,
+            Is.EqualTo(3)); // Expect 1 operation with 2 progress updates + 1 final progress update
+        Assert.That(progressEvents[0], Is.EqualTo(50));
+        Assert.That(progressEvents[1], Is.EqualTo(100));
+        Assert.That(progressEvents[2], Is.EqualTo(100));
     }
-
 
     [Test]
     public async Task ExecuteAsync_ShouldTriggerLogEvents()
@@ -178,7 +176,7 @@ public class OperationManagerTests : IDisposable
 
         await _operationManager.ExecuteAsync();
 
-        Assert.IsNotEmpty(logMessages);
+        Assert.That(logMessages, Is.Not.Empty);
     }
 
     [Test]
@@ -201,10 +199,10 @@ public class OperationManagerTests : IDisposable
 
         var result = await _operationManager.ExecuteWithResultsAsync<int>();
 
-        Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(2, result.Value.Count);
-        Assert.AreEqual(1, result.Value[0]);
-        Assert.AreEqual(2, result.Value[1]);
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Value.Count, Is.EqualTo(2));
+        Assert.That(result.Value[0], Is.EqualTo(1));
+        Assert.That(result.Value[1], Is.EqualTo(2));
     }
 
     [Test]
@@ -221,8 +219,8 @@ public class OperationManagerTests : IDisposable
 
         var result = await _operationManager.ExecuteWithResultsAsync<int>();
 
-        Assert.IsFalse(result.IsSuccess);
-        Assert.AreEqual(1, _operationManager.RollbackOperations.Count);
+        Assert.That(result.IsSuccess, Is.False);
+        Assert.That(_operationManager.RollbackOperations.Count, Is.EqualTo(1));
     }
 
     [Test]
@@ -244,8 +242,8 @@ public class OperationManagerTests : IDisposable
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         var result = await _operationManager.ExecuteWithResultsAsync<int>(cts.Token);
 
-        Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(1, result.Value[0]);
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.Value[0], Is.EqualTo(1));
     }
 
     [Test]
@@ -267,7 +265,7 @@ public class OperationManagerTests : IDisposable
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         var result = await _operationManager.ExecuteWithResultsAsync<int>(cts.Token);
 
-        Assert.IsFalse(result.IsSuccess);
+        Assert.That(result.IsSuccess, Is.False);
     }
 
     protected virtual void Dispose(bool disposing)

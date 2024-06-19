@@ -1,13 +1,7 @@
 ﻿namespace DropBear.Codex.Operations;
 
-public class ProgressEventArgs : EventArgs
+public class ProgressEventArgs(int progressPercentage, string message = "") : EventArgs
 {
-    public ProgressEventArgs(int progressPercentage, string message = "")
-    {
-        ProgressPercentage = progressPercentage;
-        Message = message;
-    }
-
-    public int ProgressPercentage { get; }
-    public string Message { get; }
+    public int ProgressPercentage { get; } = progressPercentage;
+    public string Message { get; } = message;
 }

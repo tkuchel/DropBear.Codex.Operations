@@ -1,19 +1,16 @@
 ﻿namespace DropBear.Codex.Operations;
 
-public class OperationManagerBuilder : IDisposable
+public sealed class OperationManagerBuilder : IDisposable
 {
-    private readonly OperationManager _operationManager;
+    private readonly OperationManager _operationManager = new();
     private bool _disposed;
-
-    public OperationManagerBuilder() => _operationManager = new OperationManager();
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
+        Dispose(disposing: true);
     }
 
-    protected virtual void Dispose(bool disposing)
+    private void Dispose(bool disposing)
     {
         if (_disposed) return;
 
@@ -69,4 +66,6 @@ public class OperationManagerBuilder : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, nameof(OperationManagerBuilder));
         return _operationManager;
     }
+    
+    
 }
