@@ -9,6 +9,7 @@ public class OperationBuilder
     private Func<Dictionary<string, object>, CancellationToken, Task<Result>>? _executeAsyncWithParams;
     private TimeSpan _executeTimeout = TimeSpan.FromMinutes(1);
     private EventHandler<LogEventArgs>? _log;
+    private Dictionary<string, object> _parameters = new(StringComparer.OrdinalIgnoreCase);
     private EventHandler<ProgressEventArgs>? _progressChanged;
     private Func<CancellationToken, Task<Result>>? _rollbackAsync;
     private Func<Dictionary<string, object>, CancellationToken, Task<Result>>? _rollbackAsyncWithParams;
@@ -39,6 +40,12 @@ public class OperationBuilder
     {
         _rollbackAsyncWithParams =
             rollbackAsyncWithParams ?? throw new ArgumentNullException(nameof(rollbackAsyncWithParams));
+        return this;
+    }
+
+    public OperationBuilder WithParameters(Dictionary<string, object> parameters)
+    {
+        _parameters = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
         return this;
     }
 
@@ -82,7 +89,8 @@ public class OperationBuilder
             RollbackAsyncWithParams = _rollbackAsyncWithParams,
             ExecuteTimeout = _executeTimeout,
             RollbackTimeout = _rollbackTimeout,
-            ContinueOnFailure = _continueOnFailure
+            ContinueOnFailure = _continueOnFailure,
+            Parameters = _parameters
         };
 
         if (_progressChanged is not null) operation.ProgressChanged += _progressChanged;
@@ -101,6 +109,7 @@ public class OperationBuilder
         public TimeSpan ExecuteTimeout { get; set; }
         public TimeSpan RollbackTimeout { get; set; }
         public bool ContinueOnFailure { get; set; }
+        public Dictionary<string, object> Parameters { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public event EventHandler<ProgressEventArgs>? ProgressChanged;
         public event EventHandler<LogEventArgs>? Log;
 
@@ -109,11 +118,9 @@ public class OperationBuilder
             if (ExecuteAsync is null && ExecuteAsyncWithParams is null)
                 return Result.Failure("Execute not implemented.");
 
-            var result = ExecuteAsync is not null
-                ? await ExecuteAsync(cancellationToken).ConfigureAwait(false)
-                : await ExecuteAsyncWithParams!(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            var result = ExecuteAsyncWithParams is not null
+                ? await ExecuteAsyncWithParams(Parameters, cancellationToken).ConfigureAwait(false)
+                : await ExecuteAsync!(cancellationToken).ConfigureAwait(false);
 
             OnProgressChanged(new ProgressEventArgs(100, "Operation completed."));
             OnLog(new LogEventArgs("Operation completed."));
@@ -125,11 +132,9 @@ public class OperationBuilder
             if (RollbackAsync is null && RollbackAsyncWithParams is null)
                 return Result.Failure("Rollback not implemented.");
 
-            return RollbackAsync is not null
-                ? await RollbackAsync(cancellationToken).ConfigureAwait(false)
-                : await RollbackAsyncWithParams!(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            return RollbackAsyncWithParams is not null
+                ? await RollbackAsyncWithParams(Parameters, cancellationToken).ConfigureAwait(false)
+                : await RollbackAsync!(cancellationToken).ConfigureAwait(false);
         }
 
         private void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);
@@ -145,6 +150,7 @@ public class OperationBuilder<T>
     private Func<Dictionary<string, object>, CancellationToken, Task<Result<T>>>? _executeAsyncWithParams;
     private TimeSpan _executeTimeout = TimeSpan.FromMinutes(1);
     private EventHandler<LogEventArgs>? _log;
+    private Dictionary<string, object> _parameters = new(StringComparer.OrdinalIgnoreCase);
     private EventHandler<ProgressEventArgs>? _progressChanged;
     private Func<CancellationToken, Task<Result>>? _rollbackAsync;
     private Func<Dictionary<string, object>, CancellationToken, Task<Result>>? _rollbackAsyncWithParams;
@@ -175,6 +181,12 @@ public class OperationBuilder<T>
     {
         _rollbackAsyncWithParams =
             rollbackAsyncWithParams ?? throw new ArgumentNullException(nameof(rollbackAsyncWithParams));
+        return this;
+    }
+
+    public OperationBuilder<T> WithParameters(Dictionary<string, object> parameters)
+    {
+        _parameters = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
         return this;
     }
 
@@ -218,7 +230,8 @@ public class OperationBuilder<T>
             RollbackAsyncWithParams = _rollbackAsyncWithParams,
             ExecuteTimeout = _executeTimeout,
             RollbackTimeout = _rollbackTimeout,
-            ContinueOnFailure = _continueOnFailure
+            ContinueOnFailure = _continueOnFailure,
+            Parameters = _parameters
         };
 
         if (_progressChanged is not null) operation.ProgressChanged += _progressChanged;
@@ -231,18 +244,13 @@ public class OperationBuilder<T>
     private sealed class Operation : IOperation<T>
     {
         public Func<CancellationToken, Task<Result<T>>>? ExecuteAsync { get; init; }
-
-        public Func<Dictionary<string, object>, CancellationToken, Task<Result<T>>>? ExecuteAsyncWithParams
-        {
-            get;
-            init;
-        }
-
+        public Func<Dictionary<string, object>, CancellationToken, Task<Result<T>>>? ExecuteAsyncWithParams { get; init; }
         public Func<CancellationToken, Task<Result>>? RollbackAsync { get; init; }
         public Func<Dictionary<string, object>, CancellationToken, Task<Result>>? RollbackAsyncWithParams { get; init; }
         public TimeSpan ExecuteTimeout { get; set; }
         public TimeSpan RollbackTimeout { get; set; }
         public bool ContinueOnFailure { get; set; }
+        public Dictionary<string, object> Parameters { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public event EventHandler<ProgressEventArgs>? ProgressChanged;
         public event EventHandler<LogEventArgs>? Log;
 
@@ -251,11 +259,9 @@ public class OperationBuilder<T>
             if (ExecuteAsync is null && ExecuteAsyncWithParams is null)
                 return Result<T>.Failure("Execute not implemented.");
 
-            var result = ExecuteAsync is not null
-                ? await ExecuteAsync(cancellationToken).ConfigureAwait(false)
-                : await ExecuteAsyncWithParams!(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            var result = ExecuteAsyncWithParams is not null
+                ? await ExecuteAsyncWithParams(Parameters, cancellationToken).ConfigureAwait(false)
+                : await ExecuteAsync!(cancellationToken).ConfigureAwait(false);
 
             OnProgressChanged(new ProgressEventArgs(100, "Operation completed."));
             OnLog(new LogEventArgs("Operation completed."));
@@ -266,11 +272,11 @@ public class OperationBuilder<T>
         {
             if (ExecuteAsync is null && ExecuteAsyncWithParams is null)
                 return Result.Failure("Execute not implemented.");
-            var result = ExecuteAsync is not null
-                ? await ExecuteAsync(cancellationToken).ConfigureAwait(false)
-                : await ExecuteAsyncWithParams!(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            
+            var result = ExecuteAsyncWithParams is not null
+                ? await ExecuteAsyncWithParams(Parameters, cancellationToken).ConfigureAwait(false)
+                : await ExecuteAsync!(cancellationToken).ConfigureAwait(false);
+            
             return result.IsSuccess
                 ? Result.Success()
                 : Result.Failure(result.ErrorMessage ?? "Unknown Error", result.Exception);
@@ -280,11 +286,10 @@ public class OperationBuilder<T>
         {
             if (RollbackAsync is null && RollbackAsyncWithParams is null)
                 return Result.Failure("Rollback not implemented.");
-            return RollbackAsync is not null
-                ? await RollbackAsync(cancellationToken).ConfigureAwait(false)
-                : await RollbackAsyncWithParams!(new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            
+            return RollbackAsyncWithParams is not null
+                ? await RollbackAsyncWithParams(Parameters, cancellationToken).ConfigureAwait(false)
+                : await RollbackAsync!(cancellationToken).ConfigureAwait(false);
         }
 
         private void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);

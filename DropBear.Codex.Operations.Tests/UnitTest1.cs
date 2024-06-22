@@ -37,8 +37,9 @@ public class OperationManagerTests : IDisposable
     public void AddOperation_ShouldAddOperationAndRollbackOperation()
     {
         var operation = new OperationBuilder()
-            .WithExecuteAsync(async ct => Result.Success())
-            .WithRollbackAsync(async ct => Result.Success())
+            .WithExecuteAsync(async (parameters, ct) => Result.Success())
+            .WithRollbackAsync(async (parameters, ct) => Result.Success())
+            .WithParameters(new Dictionary<string, object> { { "testParam", "testValue" } })
             .Build();
 
         _operationManager = new OperationManagerBuilder()
@@ -53,8 +54,13 @@ public class OperationManagerTests : IDisposable
     public async Task ExecuteAsync_ShouldExecuteAllOperationsSuccessfully()
     {
         var operation = new OperationBuilder()
-            .WithExecuteAsync(async ct => Result.Success())
-            .WithRollbackAsync(async ct => Result.Success())
+            .WithExecuteAsync(async (parameters, ct) => 
+            {
+                Assert.That(parameters["testParam"], Is.EqualTo("testValue"));
+                return Result.Success();
+            })
+            .WithRollbackAsync(async (parameters, ct) => Result.Success())
+            .WithParameters(new Dictionary<string, object> { { "testParam", "testValue" } })
             .Build();
 
         _operationManager = new OperationManagerBuilder()
@@ -70,8 +76,17 @@ public class OperationManagerTests : IDisposable
     public async Task ExecuteAsync_ShouldRollbackOnFailure()
     {
         var failingOperation = new OperationBuilder()
-            .WithExecuteAsync(async ct => Result.Failure("Operation failed"))
-            .WithRollbackAsync(async ct => Result.Success())
+            .WithExecuteAsync(async (parameters, ct) => 
+            {
+                Assert.That(parameters["testParam"], Is.EqualTo("testValue"));
+                return Result.Failure("Operation failed");
+            })
+            .WithRollbackAsync(async (parameters, ct) => 
+            {
+                Assert.That(parameters["testParam"], Is.EqualTo("testValue"));
+                return Result.Success();
+            })
+            .WithParameters(new Dictionary<string, object> { { "testParam", "testValue" } })
             .Build();
 
         _operationManager = new OperationManagerBuilder()
@@ -122,7 +137,7 @@ public class OperationManagerTests : IDisposable
         var progressEvents = new List<int>();
 
         var operation = new OperationBuilder()
-            .WithExecuteAsync(async ct =>
+            .WithExecuteAsync(async (parameters, ct) =>
             {
                 for (var i = 0; i < 2; i++)
                 {
@@ -134,7 +149,8 @@ public class OperationManagerTests : IDisposable
 
                 return Result.Success();
             })
-            .WithRollbackAsync(async ct => Result.Success())
+            .WithRollbackAsync(async (parameters, ct) => Result.Success())
+            .WithParameters(new Dictionary<string, object> { { "testParam", "testValue" } })
             .Build();
 
         _operationManager = new OperationManagerBuilder()
@@ -148,8 +164,7 @@ public class OperationManagerTests : IDisposable
 
         await _operationManager.ExecuteAsync();
 
-        Assert.That(progressEvents.Count,
-            Is.EqualTo(3)); // Expect 1 operation with 2 progress updates + 1 final progress update
+        Assert.That(progressEvents.Count, Is.EqualTo(3)); // Expect 1 operation with 2 progress updates + 1 final progress update
         Assert.That(progressEvents[0], Is.EqualTo(50));
         Assert.That(progressEvents[1], Is.EqualTo(100));
         Assert.That(progressEvents[2], Is.EqualTo(100));
@@ -183,13 +198,23 @@ public class OperationManagerTests : IDisposable
     public async Task ExecuteWithResultsAsync_ShouldReturnResults()
     {
         var operation1 = new OperationBuilder<int>()
-            .WithExecuteAsync(async ct => Result<int>.Success(1))
-            .WithRollbackAsync(async ct => Result.Success())
+            .WithExecuteAsync(async (parameters, ct) => 
+            {
+                Assert.That(parameters["testParam"], Is.EqualTo("testValue1"));
+                return Result<int>.Success(1);
+            })
+            .WithRollbackAsync(async (parameters, ct) => Result.Success())
+            .WithParameters(new Dictionary<string, object> { { "testParam", "testValue1" } })
             .Build();
 
         var operation2 = new OperationBuilder<int>()
-            .WithExecuteAsync(async ct => Result<int>.Success(2))
-            .WithRollbackAsync(async ct => Result.Success())
+            .WithExecuteAsync(async (parameters, ct) => 
+            {
+                Assert.That(parameters["testParam"], Is.EqualTo("testValue2"));
+                return Result<int>.Success(2);
+            })
+            .WithRollbackAsync(async (parameters, ct) => Result.Success())
+            .WithParameters(new Dictionary<string, object> { { "testParam", "testValue2" } })
             .Build();
 
         _operationManager = new OperationManagerBuilder()
