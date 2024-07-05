@@ -1,4 +1,4 @@
-﻿namespace DropBear.Codex.Operations;
+﻿namespace DropBear.Codex.Operations.StandardOperationManager;
 
 public class ProgressEventArgs(int progressPercentage, string message = "") : EventArgs
 {

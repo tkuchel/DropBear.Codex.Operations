@@ -1,4 +1,4 @@
-﻿namespace DropBear.Codex.Operations;
+﻿namespace DropBear.Codex.Operations.StandardOperationManager;
 
 public sealed class OperationManagerBuilder : IDisposable
 {

@@ -3,7 +3,7 @@ using System.Collections.ObjectModel;
 using System.Transactions;
 using DropBear.Codex.Core;
 
-namespace DropBear.Codex.Operations;
+namespace DropBear.Codex.Operations.StandardOperationManager;
 
 public class OperationManager : IDisposable
 {

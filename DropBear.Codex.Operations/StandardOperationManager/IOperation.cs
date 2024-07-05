@@ -1,6 +1,6 @@
 ﻿using DropBear.Codex.Core;
 
-namespace DropBear.Codex.Operations;
+namespace DropBear.Codex.Operations.StandardOperationManager;
 
 public interface IOperation
 {

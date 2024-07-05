@@ -1,4 +1,4 @@
-﻿namespace DropBear.Codex.Operations;
+﻿namespace DropBear.Codex.Operations.StandardOperationManager;
 
 /// <summary>
 ///     Provides data for the OperationFailed event.
