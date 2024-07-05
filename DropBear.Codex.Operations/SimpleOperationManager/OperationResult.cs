@@ -1,8 +1,22 @@
 ﻿namespace DropBear.Codex.Operations.SimpleOperationManager;
 
-public class OperationResult
+public record OperationResult
 {
-    public bool Success { get; set; }
-    public string Message { get; set; }
-    public Exception Exception { get; set; }
+
+    public OperationResult()
+    {
+        Success = false;
+        Message = string.Empty;
+        Exception = null;
+    }
+    public OperationResult(bool success, string message, Exception exception)
+    {
+        Success = success;
+        Message = message;
+        Exception = exception;
+    }
+
+    public bool Success { get; init; }
+    public string Message { get; init; }
+    public Exception? Exception { get; init; }
 }

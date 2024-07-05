@@ -2,9 +2,12 @@
 
 public class SharedCache
 {
-    private readonly Dictionary<string, object> cache = new();
+    private readonly Dictionary<string, object> cache = new(StringComparer.OrdinalIgnoreCase);
 
-    public void Set<T>(string key, T value) => cache[key] = value;
+    public void Set<T>(string key, T value)
+    {
+        if (value is not null) cache[key] = value;
+    }
 
     public T Get<T>(string key)
     {
@@ -12,7 +15,7 @@ public class SharedCache
         throw new KeyNotFoundException($"Key '{key}' not found in cache or is not of type {typeof(T)}");
     }
 
-    public bool TryGet<T>(string key, out T value)
+    public bool TryGet<T>(string key, out T? value)
     {
         if (cache.TryGetValue(key, out var objValue) && objValue is T typedValue)
         {

@@ -7,7 +7,9 @@ namespace DropBear.Codex.Operations.SimpleOperationManager;
 /// </summary>
 /// <param name="context">The context in which the operation is executed.</param>
 /// <returns>A task representing the asynchronous operation, returning an OperationResult.</returns>
+#pragma warning disable MA0048
 public delegate Task<OperationResult?> Operation(OperationContext context);
+#pragma warning restore MA0048
 
 /// <summary>
 ///     Manages the execution of a series of operations, with support for conditional branching, parallel execution, and
@@ -30,7 +32,7 @@ public class TaskManager : IDisposable
     /// </summary>
     public void Dispose()
     {
-        Dispose(true);
+        Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -108,7 +110,7 @@ public class TaskManager : IDisposable
                     continue;
                 }
 
-                async Task ExecuteOperation()
+                async Task ExecuteOperation(CancellationTokenSource passedLinkedCts)
                 {
                     var operationStopwatch = Stopwatch.StartNew();
 
@@ -117,12 +119,12 @@ public class TaskManager : IDisposable
                         try
                         {
                             result = await operation(context).ConfigureAwait(false);
-                            if (result?.Success == true) break;
+                            if ((result?.Success) is true) break;
 
                             if (retry >= options.MaxRetries) continue;
                             Trace.WriteLine(
                                 $"Operation {name} failed. Retrying in {options.RetryDelay}. Attempt {retry + 1} of {options.MaxRetries}");
-                            await Task.Delay(options.RetryDelay, linkedCts.Token).ConfigureAwait(false);
+                            await Task.Delay(options.RetryDelay, passedLinkedCts.Token).ConfigureAwait(false);
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
@@ -134,7 +136,7 @@ public class TaskManager : IDisposable
 
                             Trace.WriteLine(
                                 $"Operation {name} threw an exception. Retrying in {options.RetryDelay}. Attempt {retry + 1} of {options.MaxRetries}");
-                            await Task.Delay(options.RetryDelay, linkedCts.Token).ConfigureAwait(false);
+                            await Task.Delay(options.RetryDelay, passedLinkedCts.Token).ConfigureAwait(false);
                         }
 
                     operationStopwatch.Stop();
@@ -150,9 +152,9 @@ public class TaskManager : IDisposable
                 }
 
                 if (options.AllowParallel)
-                    tasks.Add(ExecuteOperation());
+                    tasks.Add(ExecuteOperation(linkedCts));
                 else
-                    await ExecuteOperation().ConfigureAwait(false);
+                    await ExecuteOperation(linkedCts).ConfigureAwait(false);
             }
             finally
             {
