@@ -1,6 +1,10 @@
-﻿using System.Diagnostics;
+﻿#region
+
+using System.Diagnostics;
 using System.Text;
 using DropBear.Codex.Operations.SimpleOperationManager;
+
+#endregion
 
 namespace DropBear.Codex.Operations.Tests;
 
@@ -127,7 +131,10 @@ public class TaskManagerTests
         Console.WriteLine(debugOutput.ToString());
 
         Console.WriteLine("Reported progress:");
-        foreach (var p in reportedProgress) Console.WriteLine($"{p.OperationName} - {p.ProgressPercentage}%");
+        foreach (var p in reportedProgress)
+        {
+            Console.WriteLine($"{p.OperationName} - {p.ProgressPercentage}%");
+        }
 
         Assert.That(reportedProgress, Has.Count.EqualTo(2), "Expected progress to be reported twice");
         Assert.That(reportedProgress[0].OperationName, Is.EqualTo("Op1"), "First progress report should be for Op1");
@@ -171,7 +178,10 @@ public class TaskManagerTests
         {
             attempts++;
             if (attempts < 3)
+            {
                 return new OperationResult { Success = false, Message = "Temporary failure" };
+            }
+
             return new OperationResult { Success = true };
         }, new ExecutionOptions { MaxRetries = 2, RetryDelay = TimeSpan.FromMilliseconds(100) });
 

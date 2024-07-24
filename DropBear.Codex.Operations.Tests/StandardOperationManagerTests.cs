@@ -1,5 +1,9 @@
+#region
+
 using DropBear.Codex.Core;
 using DropBear.Codex.Operations.StandardOperationManager;
+
+#endregion
 
 namespace DropBear.Codex.Operations.Tests;
 
@@ -55,7 +59,7 @@ public class OperationManagerTests : IDisposable
     public async Task ExecuteAsync_ShouldExecuteAllOperationsSuccessfully()
     {
         var operation = new OperationBuilder()
-            .WithExecuteAsync(async (parameters, ct) => 
+            .WithExecuteAsync(async (parameters, ct) =>
             {
                 Assert.That(parameters["testParam"], Is.EqualTo("testValue"));
                 return Result.Success();
@@ -77,12 +81,12 @@ public class OperationManagerTests : IDisposable
     public async Task ExecuteAsync_ShouldRollbackOnFailure()
     {
         var failingOperation = new OperationBuilder()
-            .WithExecuteAsync(async (parameters, ct) => 
+            .WithExecuteAsync(async (parameters, ct) =>
             {
                 Assert.That(parameters["testParam"], Is.EqualTo("testValue"));
                 return Result.Failure("Operation failed");
             })
-            .WithRollbackAsync(async (parameters, ct) => 
+            .WithRollbackAsync(async (parameters, ct) =>
             {
                 Assert.That(parameters["testParam"], Is.EqualTo("testValue"));
                 return Result.Success();
@@ -97,7 +101,10 @@ public class OperationManagerTests : IDisposable
         var result = await _operationManager.ExecuteAsync();
 
         Console.WriteLine($"ExecuteAsync result: {result.IsSuccess}");
-        foreach (var ex in result.Exceptions) Console.WriteLine($"Exception: {ex.Message}");
+        foreach (var ex in result.Exceptions)
+        {
+            Console.WriteLine($"Exception: {ex.Message}");
+        }
 
         Assert.That(result.IsSuccess, Is.False);
         Assert.That(_operationManager.RollbackOperations.Count, Is.EqualTo(1));
@@ -165,7 +172,8 @@ public class OperationManagerTests : IDisposable
 
         await _operationManager.ExecuteAsync();
 
-        Assert.That(progressEvents.Count, Is.EqualTo(3)); // Expect 1 operation with 2 progress updates + 1 final progress update
+        Assert.That(progressEvents.Count,
+            Is.EqualTo(3)); // Expect 1 operation with 2 progress updates + 1 final progress update
         Assert.That(progressEvents[0], Is.EqualTo(50));
         Assert.That(progressEvents[1], Is.EqualTo(100));
         Assert.That(progressEvents[2], Is.EqualTo(100));
@@ -199,7 +207,7 @@ public class OperationManagerTests : IDisposable
     public async Task ExecuteWithResultsAsync_ShouldReturnResults()
     {
         var operation1 = new OperationBuilder<int>()
-            .WithExecuteAsync(async (parameters, ct) => 
+            .WithExecuteAsync(async (parameters, ct) =>
             {
                 Assert.That(parameters["testParam"], Is.EqualTo("testValue1"));
                 return Result<int>.Success(1);
@@ -209,7 +217,7 @@ public class OperationManagerTests : IDisposable
             .Build();
 
         var operation2 = new OperationBuilder<int>()
-            .WithExecuteAsync(async (parameters, ct) => 
+            .WithExecuteAsync(async (parameters, ct) =>
             {
                 Assert.That(parameters["testParam"], Is.EqualTo("testValue2"));
                 return Result<int>.Success(2);
@@ -298,7 +306,10 @@ public class OperationManagerTests : IDisposable
     {
         if (!_disposedValue)
         {
-            if (disposing) _operationManager?.Dispose();
+            if (disposing)
+            {
+                _operationManager?.Dispose();
+            }
 
             _disposedValue = true;
         }

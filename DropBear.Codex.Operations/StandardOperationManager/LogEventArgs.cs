@@ -1,7 +1,4 @@
-﻿// File: LogEventArgs.cs
-// Description: Defines the event arguments for logging messages.
-
-namespace DropBear.Codex.Operations.StandardOperationManager;
+﻿namespace DropBear.Codex.Operations.StandardOperationManager;
 
 /// <summary>
 ///     Provides data for the log event.
@@ -12,7 +9,10 @@ public class LogEventArgs : EventArgs
     ///     Initializes a new instance of the <see cref="LogEventArgs" /> class.
     /// </summary>
     /// <param name="message">The log message.</param>
-    public LogEventArgs(string message) => Message = message;
+    public LogEventArgs(string message)
+    {
+        Message = message;
+    }
 
     /// <summary>
     ///     Gets the log message.

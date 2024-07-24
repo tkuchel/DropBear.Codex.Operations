@@ -1,4 +1,8 @@
-﻿using System.Diagnostics;
+﻿#region
+
+using System.Diagnostics;
+
+#endregion
 
 namespace DropBear.Codex.Operations.SimpleOperationManager;
 
@@ -32,7 +36,7 @@ public class TaskManager : IDisposable
     /// </summary>
     public void Dispose()
     {
-        Dispose(disposing: true);
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
 
@@ -47,7 +51,10 @@ public class TaskManager : IDisposable
     public void AddOperation(string name, Operation operation, ExecutionOptions? options = null)
     {
         if (string.IsNullOrEmpty(name))
+        {
             throw new ArgumentException("Operation name cannot be null or empty.", nameof(name));
+        }
+
         _operations.Add((name, operation ?? throw new ArgumentNullException(nameof(operation)),
             options ?? new ExecutionOptions()));
     }
@@ -62,7 +69,10 @@ public class TaskManager : IDisposable
     public void AddConditionalBranch(string name, Func<OperationContext, Task<bool>> condition)
     {
         if (string.IsNullOrEmpty(name))
+        {
             throw new ArgumentException("Branch name cannot be null or empty.", nameof(name));
+        }
+
         _conditionalBranches[name] = condition ?? throw new ArgumentNullException(nameof(condition));
     }
 
@@ -116,12 +126,20 @@ public class TaskManager : IDisposable
 
                     OperationResult? result = null;
                     for (var retry = 0; retry <= options.MaxRetries; retry++)
+                    {
                         try
                         {
                             result = await operation(context).ConfigureAwait(false);
-                            if ((result?.Success) is true) break;
+                            if (result?.Success is true)
+                            {
+                                break;
+                            }
 
-                            if (retry >= options.MaxRetries) continue;
+                            if (retry >= options.MaxRetries)
+                            {
+                                continue;
+                            }
+
                             Trace.WriteLine(
                                 $"Operation {name} failed. Retrying in {options.RetryDelay}. Attempt {retry + 1} of {options.MaxRetries}");
                             await Task.Delay(options.RetryDelay, passedLinkedCts.Token).ConfigureAwait(false);
@@ -132,29 +150,39 @@ public class TaskManager : IDisposable
                             {
                                 Success = false, Message = $"Operation '{name}' threw an exception", Exception = ex
                             };
-                            if (retry == options.MaxRetries) break;
+                            if (retry == options.MaxRetries)
+                            {
+                                break;
+                            }
 
                             Trace.WriteLine(
                                 $"Operation {name} threw an exception. Retrying in {options.RetryDelay}. Attempt {retry + 1} of {options.MaxRetries}");
                             await Task.Delay(options.RetryDelay, passedLinkedCts.Token).ConfigureAwait(false);
                         }
+                    }
 
                     operationStopwatch.Stop();
                     Trace.WriteLine(
                         $"Operation {name} completed in {operationStopwatch.ElapsedMilliseconds}ms with result: {result?.Success}");
 
                     if (result is { Success: false })
+                    {
                         throw new InvalidOperationException(
                             $"Operation {name} failed after {options.MaxRetries} retries", result.Exception);
+                    }
 
                     Interlocked.Increment(ref completedOperations);
                     progress?.Report((name, completedOperations * 100 / totalOperations));
                 }
 
                 if (options.AllowParallel)
+                {
                     tasks.Add(ExecuteOperation(linkedCts));
+                }
                 else
+                {
                     await ExecuteOperation(linkedCts).ConfigureAwait(false);
+                }
             }
             finally
             {
@@ -201,7 +229,10 @@ public class TaskManager : IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
-        if (_isDisposed) return;
+        if (_isDisposed)
+        {
+            return;
+        }
 
         if (disposing)
         {

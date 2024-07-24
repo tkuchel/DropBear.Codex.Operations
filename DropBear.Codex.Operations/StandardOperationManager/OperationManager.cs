@@ -1,7 +1,11 @@
-﻿using System.Collections.Concurrent;
+﻿#region
+
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Transactions;
 using DropBear.Codex.Core;
+
+#endregion
 
 namespace DropBear.Codex.Operations.StandardOperationManager;
 
@@ -17,9 +21,15 @@ public class OperationManager : IDisposable
     public IReadOnlyCollection<IOperation> RollbackOperations =>
         new ReadOnlyCollection<IOperation>(_rollbackOperations.ToList());
 
-    public void Dispose() => _cancellationTokenSource.Dispose();
+    public void Dispose()
+    {
+        _cancellationTokenSource.Dispose();
+    }
 
-    public void OnProgressChanged(ProgressEventArgs e) => ProgressChanged?.Invoke(this, e);
+    public void OnProgressChanged(ProgressEventArgs e)
+    {
+        ProgressChanged?.Invoke(this, e);
+    }
 
     public event EventHandler<EventArgs>? OperationStarted;
     public event EventHandler<EventArgs>? OperationCompleted;
@@ -31,7 +41,9 @@ public class OperationManager : IDisposable
     public void AddOperation(IOperation operation)
     {
         if (operation == null)
+        {
             throw new ArgumentNullException(nameof(operation), "Operation cannot be null");
+        }
 
         _operations.Enqueue(operation);
         _rollbackOperations.Enqueue(operation);
@@ -67,7 +79,10 @@ public class OperationManager : IDisposable
                     OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
                     LogMessage($"Operation failed: {result.ErrorMessage}");
 
-                    if (!operation.ContinueOnFailure) break;
+                    if (!operation.ContinueOnFailure)
+                    {
+                        break;
+                    }
                 }
 
                 OperationCompleted?.Invoke(this, EventArgs.Empty);
@@ -95,7 +110,9 @@ public class OperationManager : IDisposable
                 await ExecuteRollbacksAsync(rollbackOperationsCopy, cancellationToken).ConfigureAwait(false);
 
             if (!rollbackResult.IsSuccess)
+            {
                 _exceptions.Add(new InvalidOperationException("Rollback failed", rollbackResult.Exception));
+            }
 
             return Result.Failure(new Collection<Exception>(_exceptions.ToList()));
         }
@@ -137,7 +154,10 @@ public class OperationManager : IDisposable
                         OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
                         LogMessage($"Operation failed: {result.ErrorMessage}");
 
-                        if (!operation.ContinueOnFailure) break;
+                        if (!operation.ContinueOnFailure)
+                        {
+                            break;
+                        }
                     }
 
                     if (result.IsSuccess)
@@ -163,7 +183,10 @@ public class OperationManager : IDisposable
                         OperationFailed?.Invoke(this, new OperationFailedEventArgs(exception));
                         LogMessage($"Operation failed: {result.ErrorMessage}");
 
-                        if (!operation.ContinueOnFailure) break;
+                        if (!operation.ContinueOnFailure)
+                        {
+                            break;
+                        }
                     }
                 }
 
@@ -286,7 +309,13 @@ public class OperationManager : IDisposable
             $"Progress: {progressPercentage}% - Completed {completedOperations} of {totalOperations} operations.");
     }
 
-    private void LogMessage(string message) => Log?.Invoke(this, new LogEventArgs(message));
+    private void LogMessage(string message)
+    {
+        Log?.Invoke(this, new LogEventArgs(message));
+    }
 
-    public void Cancel() => _cancellationTokenSource.Cancel();
+    public void Cancel()
+    {
+        _cancellationTokenSource.Cancel();
+    }
 }

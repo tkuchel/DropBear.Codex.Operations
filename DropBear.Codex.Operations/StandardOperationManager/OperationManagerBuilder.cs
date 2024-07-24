@@ -7,14 +7,20 @@ public sealed class OperationManagerBuilder : IDisposable
 
     public void Dispose()
     {
-        Dispose(disposing: true);
+        Dispose(true);
     }
 
     private void Dispose(bool disposing)
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
 
-        if (disposing) _operationManager.Dispose();
+        if (disposing)
+        {
+            _operationManager.Dispose();
+        }
 
         _disposed = true;
     }
@@ -66,6 +72,4 @@ public sealed class OperationManagerBuilder : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, nameof(OperationManagerBuilder));
         return _operationManager;
     }
-    
-    
 }

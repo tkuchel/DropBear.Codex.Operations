@@ -6,12 +6,19 @@ public class SharedCache
 
     public void Set<T>(string key, T value)
     {
-        if (value is not null) _cache[key] = value;
+        if (value is not null)
+        {
+            _cache[key] = value;
+        }
     }
 
     public T Get<T>(string key)
     {
-        if (_cache.TryGetValue(key, out var value) && value is T typedValue) return typedValue;
+        if (_cache.TryGetValue(key, out var value) && value is T typedValue)
+        {
+            return typedValue;
+        }
+
         throw new KeyNotFoundException($"Key '{key}' not found in cache or is not of type {typeof(T)}");
     }
 

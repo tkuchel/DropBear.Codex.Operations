@@ -9,7 +9,10 @@ public class OperationFailedEventArgs : EventArgs
     ///     Initializes a new instance of the OperationFailedEventArgs class.
     /// </summary>
     /// <param name="exception">The exception that caused the operation to fail.</param>
-    public OperationFailedEventArgs(Exception exception) => Exception = exception;
+    public OperationFailedEventArgs(Exception exception)
+    {
+        Exception = exception;
+    }
 
     /// <summary>
     ///     Gets the exception that caused the operation to fail.
